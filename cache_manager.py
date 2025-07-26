@@ -219,11 +219,8 @@ class AirtableCache:
             self.cache_timestamp = time.time()
             print(f"Cached {len(self.cache_data)} records at {now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
             
-            # Analyze teams for new data (runs async-style, doesn't block)
-            try:
-                self.analyze_teams_for_new_data(self.cache_data)
-            except Exception as e:
-                print(f"Team analysis failed (non-blocking): {e}")
+            # Skip team analysis for now to ensure fast deployment
+            print("Skipping team analysis for fast deployment - can be enabled later via /api/cache/analyze-teams")
         else:
             cache_age_minutes = (time.time() - self.cache_timestamp) / 60
             print(f"Using cached data ({len(self.cache_data)} records, {cache_age_minutes:.1f}min old)")

@@ -89,7 +89,7 @@ def get_jira_status():
 def debug_environment():
     """Debug endpoint to check environment configuration."""
     import os
-    from config import DB_PATH, AIRTABLE_API_KEY, AIRTABLE_BASE_ID
+    from config import DB_PATH, AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
     
     return {
         "database_path": DB_PATH,
@@ -98,10 +98,12 @@ def debug_environment():
         "db_directory_writable": os.access(os.path.dirname(DB_PATH), os.W_OK) if os.path.exists(os.path.dirname(DB_PATH)) else False,
         "airtable_key_configured": bool(AIRTABLE_API_KEY),
         "airtable_base_configured": bool(AIRTABLE_BASE_ID),
+        "airtable_table_name": AIRTABLE_TABLE_NAME,
         "environment_vars": {
             "DATABASE_PATH": os.getenv("DATABASE_PATH"),
             "AIRTABLE_API_KEY": "***" if AIRTABLE_API_KEY else None,
             "AIRTABLE_BASE_ID": AIRTABLE_BASE_ID,
+            "AIRTABLE_TABLE_NAME": os.getenv("AIRTABLE_TABLE_NAME"),
         }
     }
 

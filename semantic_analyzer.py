@@ -295,6 +295,137 @@ class SemanticAnalyzer:
             
         except Exception as e:
             return {"error": str(e)}
+    
+    def assign_teams_to_issues(self, issues: List[Dict[str, Any]]) -> Dict[str, str]:
+        """
+        Assign teams to issues based on semantic similarity to Jira tickets.
+        
+        Args:
+            issues: List of issue dictionaries with keys: id, description, type, status, area_impacted
+            
+        Returns:
+            Dict mapping issue IDs to team names
+        """
+        team_assignments = {}
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Get all Jira tickets with team information
+            cursor.execute("""
+                SELECT id, summary, description, team_name, embedding
+                FROM jira_tickets 
+                WHERE team_name IS NOT NULL AND team_name != ''
+            """)
+            jira_rows = cursor.fetchall()
+            
+            if not jira_rows:
+                print("⚠️ No Jira tickets with team information found")
+                # Fallback to area-based assignment
+                return self._assign_teams_by_area(issues)
+            
+            # Process each issue
+            for issue in issues:
+                issue_id = issue.get("id", "")
+                description = issue.get("description", "")
+                area_impacted = issue.get("area_impacted", "")
+                issue_type = issue.get("type", "")
+                
+                # Create search text from issue
+                search_text = f"{description} {area_impacted} {issue_type}".strip()
+                
+                if not search_text:
+                    team_assignments[issue_id] = "Triage"
+                    continue
+                
+                # Try semantic search if OpenAI is available
+                best_team = "Triage"
+                if OPENAI_AVAILABLE:
+                    issue_embedding = self.embed_text(search_text)
+                    if issue_embedding is not None:
+                        best_similarity = 0.0
+                        
+                        for j_id, summary, jira_desc, team_name, emb_blob in jira_rows:
+                            if emb_blob:
+                                try:
+                                    jira_embedding = pickle.loads(emb_blob)
+                                    similarity = self.cosine_similarity(issue_embedding, jira_embedding)
+                                    
+                                    if similarity > best_similarity:
+                                        best_similarity = similarity
+                                        best_team = team_name
+                                        
+                                except Exception:
+                                    continue
+                        
+                        # Only use semantic result if similarity is reasonable
+                        if best_similarity < 0.3:
+                            best_team = self._assign_team_by_area(area_impacted)
+                    else:
+                        best_team = self._assign_team_by_area(area_impacted)
+                else:
+                    # Fallback to text-based matching
+                    best_team = self._assign_team_by_text_similarity(search_text, jira_rows, area_impacted)
+                
+                team_assignments[issue_id] = best_team
+            
+            conn.close()
+            return team_assignments
+            
+        except Exception as e:
+            print(f"⚠️ Team assignment failed: {e}")
+            # Fallback to area-based assignment
+            return self._assign_teams_by_area(issues)
+    
+    def _assign_teams_by_area(self, issues: List[Dict[str, Any]]) -> Dict[str, str]:
+        """Fallback team assignment based on area impacted."""
+        assignments = {}
+        for issue in issues:
+            issue_id = issue.get("id", "")
+            area_impacted = issue.get("area_impacted", "")
+            assignments[issue_id] = self._assign_team_by_area(area_impacted)
+        return assignments
+    
+    def _assign_team_by_area(self, area_impacted: str) -> str:
+        """Assign team based on area impacted."""
+        if not area_impacted:
+            return "Triage"
+        
+        area_lower = area_impacted.lower()
+        if "salesforce" in area_lower:
+            return "Salesforce Team"
+        elif "billing" in area_lower or "payment" in area_lower:
+            return "Billing Team"
+        elif "underwriting" in area_lower:
+            return "Underwriting Team"
+        elif "claims" in area_lower:
+            return "Claims Team"
+        elif "portal" in area_lower or "dashboard" in area_lower:
+            return "Portal Team"
+        else:
+            return "Triage"
+    
+    def _assign_team_by_text_similarity(self, search_text: str, jira_rows: List, area_impacted: str) -> str:
+        """Assign team using text-based similarity matching."""
+        best_score = 0
+        best_team = self._assign_team_by_area(area_impacted)
+        
+        search_words = set(search_text.lower().split())
+        
+        for j_id, summary, jira_desc, team_name, emb_blob in jira_rows:
+            jira_text = f"{summary or ''} {jira_desc or ''}".lower()
+            jira_words = set(jira_text.split())
+            
+            # Calculate word overlap score
+            common_words = search_words.intersection(jira_words)
+            if common_words:
+                score = len(common_words) / len(search_words.union(jira_words))
+                if score > best_score:
+                    best_score = score
+                    best_team = team_name
+        
+        return best_team if best_score > 0.1 else self._assign_team_by_area(area_impacted)
 
 # Global semantic analyzer instance
 semantic_analyzer = SemanticAnalyzer()

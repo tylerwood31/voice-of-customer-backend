@@ -13,7 +13,7 @@ from airtable import fetch_all_records  # you'll write this (below)
 def init_schema():
     with db_conn() as conn:
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS feedback (
+        CREATE TABLE IF NOT EXISTS feedback_cache (
             id TEXT PRIMARY KEY,
             created_at TEXT,
             modified_at TEXT,
@@ -88,7 +88,7 @@ def _do_refresh(mode: str, since: str | None = None):
                 payload = json.dumps(r["fields"], ensure_ascii=False)
 
                 conn.execute("""
-                    INSERT INTO feedback (id, created_at, modified_at, fields_json)
+                    INSERT INTO feedback_cache (id, created_at, modified_at, fields_json)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         created_at = excluded.created_at,

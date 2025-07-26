@@ -29,3 +29,4 @@ response_times_cache.logvoice_of_customer.db
 
 # Local Netlify folder
 .netlify
+voice_of_customer.db

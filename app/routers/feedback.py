@@ -43,7 +43,7 @@ def get_feedback(
     try:
         with db_conn() as conn:
             # Build query with optional filters
-            query = "SELECT id, fields_json FROM feedback"
+            query = "SELECT id, fields_json FROM feedback_cache"
             where_clauses = []
             params = []
             
@@ -130,7 +130,7 @@ def get_feedback_by_id(feedback_id: str):
             
             cursor.execute("""
                 SELECT id, fields_json, created_at, modified_at
-                FROM feedback
+                FROM feedback_cache
                 WHERE id = ?
             """, (feedback_id,))
             

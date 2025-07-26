@@ -53,11 +53,21 @@ class IntelligentCache:
             while True:
                 params = {"pageSize": 100}
                 
-                # Add filter for incremental updates
+                # Add filter for 2025 records and incremental updates
+                filter_conditions = []
+                
+                # Always filter for 2025 records
+                filter_conditions.append("YEAR({Created}) = 2025")
+                
+                # Add incremental filter if needed
                 if since_timestamp and not self.should_do_full_refresh():
-                    # Filter for records created/modified after the timestamp
-                    filter_formula = f"OR({{Created}} > '{since_timestamp}', {{Last Modified Time}} > '{since_timestamp}')"
-                    params["filterByFormula"] = filter_formula
+                    filter_conditions.append(f"OR({{Created}} > '{since_timestamp}', {{Last Modified Time}} > '{since_timestamp}')")
+                
+                if filter_conditions:
+                    if len(filter_conditions) == 1:
+                        params["filterByFormula"] = filter_conditions[0]
+                    else:
+                        params["filterByFormula"] = f"AND({', '.join(filter_conditions)})"
                 
                 if offset:
                     params["offset"] = offset
@@ -213,6 +223,11 @@ class IntelligentCache:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # First check if table exists and has data
+            cursor.execute("SELECT COUNT(*) FROM feedback")
+            total_count = cursor.fetchone()[0]
+            print(f"📊 Database has {total_count} feedback records")
+            
             # Build query with optional filters
             query = """
                 SELECT id, initial_description, notes, priority, team_routed,
@@ -242,8 +257,11 @@ class IntelligentCache:
             
             query += " ORDER BY created DESC"
             
+            print(f"🔍 Executing query: {query} with params: {params}")
             cursor.execute(query, params)
             rows = cursor.fetchall()
+            print(f"📤 Query returned {len(rows)} rows")
+            
             conn.close()
             
             # Convert to dict format
@@ -265,10 +283,13 @@ class IntelligentCache:
                     "triage_rep": row[13]
                 })
             
+            print(f"✅ Returning {len(results)} formatted results")
             return results
             
         except Exception as e:
             print(f"❌ Database query error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def update_cache(self, force_full_refresh: bool = False):

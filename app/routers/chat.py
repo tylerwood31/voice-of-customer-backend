@@ -118,29 +118,39 @@ def chat_with_data(request: ChatRequest):
     try:
         # Find related feedback using our robust semantic analyzer
         feedback_matches = semantic_analyzer.find_related_feedback(request.question, top_n=5)
-        related_feedback = [
-            {
-                "id": f[1], 
-                "description": f[2][:200] + "..." if len(f[2]) > 200 else f[2], 
-                "priority": f[3], 
-                "team": f[4], 
-                "similarity": round(f[0], 3)
-            }
-            for f in feedback_matches
-        ]
+        related_feedback = []
+        
+        try:
+            related_feedback = [
+                {
+                    "id": f[1], 
+                    "description": f[2][:200] + "..." if len(f[2]) > 200 else f[2], 
+                    "priority": f[3], 
+                    "team": f[4], 
+                    "similarity": round(f[0], 3)
+                }
+                for f in feedback_matches
+            ]
+        except Exception as fb_error:
+            print(f"⚠️ Feedback search error: {fb_error}")
 
         # Find related Jira tickets using our robust semantic analyzer
         jira_matches = semantic_analyzer.find_related_jira_tickets(request.question, top_n=3)
-        related_jira = [
-            {
-                "ticket_id": j[1], 
-                "summary": j[2][:150] + "..." if len(j[2]) > 150 else j[2], 
-                "similarity": round(j[0], 3), 
-                "assignee": j[3], 
-                "team": j[4]
-            }
-            for j in jira_matches
-        ]
+        related_jira = []
+        
+        try:
+            related_jira = [
+                {
+                    "ticket_id": j[1], 
+                    "summary": j[2][:150] + "..." if len(j[2]) > 150 else j[2], 
+                    "similarity": round(j[0], 3), 
+                    "assignee": j[3], 
+                    "team": j[4]
+                }
+                for j in jira_matches
+            ]
+        except Exception as jira_error:
+            print(f"⚠️ Jira search error: {jira_error}")
 
         # Generate AI response
         ai_answer = generate_intelligent_response(request.question, related_feedback, related_jira)
@@ -153,8 +163,10 @@ def chat_with_data(request: ChatRequest):
         
     except Exception as e:
         print(f"❌ Chat error: {e}")
+        import traceback
+        traceback.print_exc()
         return ChatResponse(
-            answer=f"I encountered an error while searching the data: {str(e)}",
+            answer=f"I'm having trouble accessing the data right now. This might be because we're still loading the feedback database. Please try again in a few minutes.",
             related_feedback=[],
             related_jira=[]
         )

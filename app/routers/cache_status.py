@@ -163,6 +163,15 @@ def get_scheduler_status():
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         }
 
+@router.get("/deployment-version", summary="Check deployment version")
+def get_deployment_version():
+    """Check which version of the code is deployed."""
+    return {
+        "version": "2025-07-26-new-cache-architecture-v3",
+        "cache_table": "feedback_cache",
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    }
+
 @router.get("/test-airtable", summary="Test direct Airtable connection")
 def test_airtable_connection():
     """Test Airtable connection and see what data we're getting."""

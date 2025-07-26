@@ -18,76 +18,13 @@ router = APIRouter()
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from config import DB_PATH, AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
 
+# Import cache manager
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+from cache_manager import airtable_cache
+
 def fetch_airtable_data():
-    """Fetch data from Airtable and return it in the expected format."""
-    if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
-        return []
-    
-    try:
-        url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}"
-        headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
-        
-        all_records = []
-        offset = None
-        
-        while True:
-            params = {"pageSize": 100}
-            if offset:
-                params["offset"] = offset
-                
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-            if response.status_code != 200:
-                break
-                
-            data = response.json()
-            records = data.get("records", [])
-            if not records:
-                break
-                
-            all_records.extend(records)
-            offset = data.get("offset")
-            if not offset:
-                break
-        
-        # Map Airtable fields to our expected structure
-        mapped_records = []
-        for record in all_records:
-            fields = record.get("fields", {})
-            
-            # Map priority (numeric to text)
-            priority_map = {1: "High", 2: "Medium", 3: "Low"}
-            priority_num = fields.get("Priority", 3)
-            priority = priority_map.get(priority_num, "Medium")
-            
-            # Map status to team (simplified mapping)
-            status = fields.get("Status", "New")
-            team = "Engineering" if status in ["In Progress", "Done"] else "Triage"
-            
-            # Map environment (simplified)
-            is_cw2 = fields.get("CW 2.0 Bug", False)
-            environment = "CW 2.0" if is_cw2 else "CW 1.0"
-            
-            mapped_record = {
-                "id": record["id"],
-                "initial_description": fields.get("Notes", ""),
-                "notes": fields.get("Notes", ""),
-                "priority": priority,
-                "team_routed": team,
-                "environment": environment,
-                "area_impacted": fields.get("Type of Issue", "Bug"),
-                "created": fields.get("Created", fields.get("Reported On", "")),
-                "issue_number": fields.get("Issue", ""),
-                "status": status,
-                "reporter_email": fields.get("User Profile Email", ""),
-                "slack_thread": fields.get("Slack Thread Link", "")
-            }
-            mapped_records.append(mapped_record)
-            
-        return mapped_records
-        
-    except Exception as e:
-        print(f"Error fetching Airtable data: {e}")
-        return []
+    """Fetch data from Airtable using cache for better performance."""
+    return airtable_cache.get_data()
 
 def get_description(initial_description: str, notes: str) -> str:
     """

@@ -13,6 +13,78 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 import intelligent_cache
 from db_connection import db_conn
 
+# Cache for team assignments to avoid repeated semantic analysis
+_team_assignment_cache = {}
+_cache_timestamp = None
+
+def get_team_assignments_batch(records_data):
+    """Get team assignments for a batch of records, using caching."""
+    global _team_assignment_cache, _cache_timestamp
+    
+    # Check if cache is still valid (refresh every hour)
+    now = datetime.now()
+    if _cache_timestamp and (now - _cache_timestamp).total_seconds() < 3600:
+        # Use cached assignments
+        return _team_assignment_cache
+    
+    # Rebuild cache with batch assignment
+    try:
+        from semantic_analyzer import semantic_analyzer
+        
+        # Prepare all issues for batch processing
+        issues_data = []
+        for record_id, fields in records_data:
+            area_impacted_raw = fields.get("Area Impacted")
+            if isinstance(area_impacted_raw, list) and area_impacted_raw:
+                area_impacted = area_impacted_raw[0]
+            elif isinstance(area_impacted_raw, str):
+                area_impacted = area_impacted_raw
+            else:
+                area_impacted = "Unknown"
+                
+            issues_data.append({
+                "id": record_id,
+                "description": fields.get("Notes", ""),
+                "type": fields.get("Type of Issue", ""),
+                "status": fields.get("Status", "New"),
+                "area_impacted": area_impacted
+            })
+        
+        # Get batch team assignments
+        _team_assignment_cache = semantic_analyzer.assign_teams_to_issues(issues_data)
+        _cache_timestamp = now
+        
+    except Exception as e:
+        print(f"Semantic analyzer batch assignment failed: {e}")
+        # Fallback to area-based assignment
+        _team_assignment_cache = {}
+        for record_id, fields in records_data:
+            area_impacted_raw = fields.get("Area Impacted")
+            if isinstance(area_impacted_raw, list) and area_impacted_raw:
+                area_impacted = area_impacted_raw[0]
+            elif isinstance(area_impacted_raw, str):
+                area_impacted = area_impacted_raw
+            else:
+                area_impacted = "Unknown"
+            
+            assigned_team = "Triage"  # Default
+            if area_impacted:
+                if "salesforce" in area_impacted.lower():
+                    assigned_team = "Salesforce Team"
+                elif "billing" in area_impacted.lower() or "payment" in area_impacted.lower():
+                    assigned_team = "Billing Team"
+                elif "underwriting" in area_impacted.lower():
+                    assigned_team = "Underwriting Team"
+                elif "claims" in area_impacted.lower():
+                    assigned_team = "Claims Team"
+                elif "portal" in area_impacted.lower() or "dashboard" in area_impacted.lower():
+                    assigned_team = "Portal Team"
+            
+            _team_assignment_cache[record_id] = assigned_team
+        _cache_timestamp = now
+    
+    return _team_assignment_cache
+
 def get_description(initial_description: str, notes: str) -> str:
     """
     Get the appropriate description field based on data evolution.
@@ -56,6 +128,10 @@ def get_feedback(
             cursor.execute(query, params)
             rows = cursor.fetchall()
             
+            # Get team assignments for all records in batch
+            records_data = [(row[0], json.loads(row[1])) for row in rows]
+            team_assignments = get_team_assignments_batch(records_data)
+            
             # Convert to our response format
             results = []
             for row in rows:
@@ -83,11 +159,14 @@ def get_feedback(
                     else:
                         area_impacted = "Unknown"
                     
+                    # Get team assignment from cached batch results
+                    assigned_team = team_assignments.get(row[0], "Triage")
+                    
                     record = {
                         "id": row[0],
                         "description": fields.get("Notes", ""),
                         "priority": mapped_priority,
-                        "team": "Triage",  # Default for now, team analysis can be added later
+                        "team": assigned_team,
                         "environment": environment_val,
                         "area_impacted": area_impacted,
                         "created": fields.get("Created", fields.get("Reported On", "")),
@@ -161,11 +240,21 @@ def get_feedback_by_id(feedback_id: str):
             else:
                 area_impacted = "Unknown"
             
+            # Get team assignment (use cache or compute for single record)
+            global _team_assignment_cache
+            if row[0] in _team_assignment_cache:
+                assigned_team = _team_assignment_cache[row[0]]
+            else:
+                # Compute team assignment for this single record
+                records_data = [(row[0], fields)]
+                team_assignments = get_team_assignments_batch(records_data)
+                assigned_team = team_assignments.get(row[0], "Triage")
+            
             return {
                 "id": row[0],
                 "description": fields.get("Notes", ""),
                 "priority": mapped_priority,
-                "team": "Triage",
+                "team": assigned_team,
                 "environment": environment_val,
                 "area_impacted": area_impacted,
                 "created": fields.get("Created", fields.get("Reported On", "")),

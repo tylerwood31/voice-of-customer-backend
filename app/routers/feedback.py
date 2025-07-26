@@ -85,19 +85,8 @@ def get_feedback(
                     else:
                         area_impacted = "Unknown"
                     
-                    # Simple area-based team assignment
-                    if area_impacted and "salesforce" in area_impacted.lower():
-                        assigned_team = "Salesforce Team"
-                    elif area_impacted and ("billing" in area_impacted.lower() or "payment" in area_impacted.lower()):
-                        assigned_team = "Billing Team"
-                    elif area_impacted and "underwriting" in area_impacted.lower():
-                        assigned_team = "Underwriting Team"
-                    elif area_impacted and "claims" in area_impacted.lower():
-                        assigned_team = "Claims Team"
-                    elif area_impacted and ("portal" in area_impacted.lower() or "dashboard" in area_impacted.lower()):
-                        assigned_team = "Portal Team"
-                    else:
-                        assigned_team = "Triage"
+                    # Default team assignment for now
+                    assigned_team = "Triage"
                     
                     record = {
                         "id": row[0],

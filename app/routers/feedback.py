@@ -13,6 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 import intelligent_cache
 from db_connection import db_conn
 from semantic_analyzer import semantic_analyzer
+from team_assignment_service import team_service
 
 
 def get_team_assignment(description: str, area_impacted: str, type_of_issue: str) -> str:
@@ -67,21 +68,27 @@ def get_team_assignment(description: str, area_impacted: str, type_of_issue: str
         
         return "Unassigned"
 
-def get_description(initial_description: str, notes: str) -> str:
+def get_description(fields: dict) -> str:
     """
-    Get the appropriate description field based on data evolution.
-    Starting around May 23rd, InitialDescription became the primary field.
-    Before that, Notes was used.
+    Get the appropriate description field from Airtable fields.
+    Tries multiple potential description fields in priority order.
+    """
+    # Try different potential description fields in order of preference
+    description_fields = [
+        "Notes",
+        "Description", 
+        "Initial Description",
+        "Details",
+        "Resolution Notes",
+        "Comments"
+    ]
     
-    Logic: If InitialDescription is blank, use Notes field. 
-    If both fields blank, return "No description".
-    """
-    # For now, just use notes field as the primary description
-    # Could be enhanced later to combine multiple description sources
-    if notes and notes.strip():
-        return notes.strip()
-    else:
-        return "No description provided"
+    for field_name in description_fields:
+        field_value = fields.get(field_name, "")
+        if field_value and str(field_value).strip() and str(field_value).strip() not in ["", "N/A", "None"]:
+            return str(field_value).strip()
+    
+    return "No description provided"
 
 @router.get("/", summary="Get feedback with optional filters")
 def get_feedback(
@@ -129,28 +136,36 @@ def get_feedback(
                         is_cw2 = fields.get("CW 2.0 Bug", False)
                         environment_val = "CW 2.0" if is_cw2 else "CW 1.0"
                     
-                    # Area impacted mapping
+                    # Area impacted mapping - handle various data formats from Airtable
                     area_impacted_raw = fields.get("Area Impacted")
-                    if isinstance(area_impacted_raw, list) and area_impacted_raw:
-                        area_impacted = area_impacted_raw[0]
-                    elif isinstance(area_impacted_raw, str):
-                        area_impacted = area_impacted_raw
-                    else:
-                        area_impacted = "Unknown"
+                    area_impacted = "Unknown"
                     
-                    # Use simple area-based team assignment for performance
-                    if area_impacted and "salesforce" in area_impacted.lower():
-                        assigned_team = "Salesforce Team"
-                    elif area_impacted and ("billing" in area_impacted.lower() or "payment" in area_impacted.lower()):
-                        assigned_team = "Billing Team"
-                    elif area_impacted and "underwriting" in area_impacted.lower():
-                        assigned_team = "Underwriting Team"
-                    elif area_impacted and "claims" in area_impacted.lower():
-                        assigned_team = "Claims Team"
-                    elif area_impacted and ("portal" in area_impacted.lower() or "dashboard" in area_impacted.lower()):
-                        assigned_team = "Portal Team"
-                    else:
-                        assigned_team = "Unassigned"
+                    if area_impacted_raw:
+                        if isinstance(area_impacted_raw, list) and area_impacted_raw:
+                            # If it's a list, join all values or take first non-empty
+                            valid_items = [str(item).strip() for item in area_impacted_raw if item and str(item).strip()]
+                            if valid_items:
+                                area_impacted = ", ".join(valid_items)
+                        elif isinstance(area_impacted_raw, str) and area_impacted_raw.strip():
+                            area_impacted = area_impacted_raw.strip()
+                        elif area_impacted_raw and str(area_impacted_raw).strip():
+                            # Handle other types (numbers, etc.)
+                            area_impacted = str(area_impacted_raw).strip()
+                    
+                    # Fallback to other potential fields if still Unknown
+                    if area_impacted == "Unknown":
+                        for fallback_field in ["System Impacted", "System", "Component", "Area"]:
+                            fallback_value = fields.get(fallback_field)
+                            if fallback_value and str(fallback_value).strip():
+                                area_impacted = str(fallback_value).strip()
+                                break
+                    
+                    # Use team assignment service with CSV data
+                    assigned_team = team_service.assign_team(
+                        area_impacted=area_impacted,
+                        description=fields.get("Notes", ""),
+                        type_of_issue=fields.get("Type of Issue", "")
+                    )
                     
                     # Calculate week (Monday of the created date)
                     created_date = fields.get("Created", fields.get("Reported On", ""))
@@ -172,7 +187,7 @@ def get_feedback(
                     
                     record = {
                         "id": row[0],
-                        "description": get_description(fields.get("Notes", ""), fields.get("Resolution Notes", "")),
+                        "description": get_description(fields),
                         "priority": mapped_priority,
                         "team": assigned_team,
                         "environment": environment_val,
@@ -243,27 +258,36 @@ def get_feedback_by_id(feedback_id: str):
                 is_cw2 = fields.get("CW 2.0 Bug", False)
                 environment_val = "CW 2.0" if is_cw2 else "CW 1.0"
             
+            # Area impacted mapping - handle various data formats from Airtable
             area_impacted_raw = fields.get("Area Impacted")
-            if isinstance(area_impacted_raw, list) and area_impacted_raw:
-                area_impacted = area_impacted_raw[0]
-            elif isinstance(area_impacted_raw, str):
-                area_impacted = area_impacted_raw
-            else:
-                area_impacted = "Unknown"
+            area_impacted = "Unknown"
             
-            # Use simple area-based team assignment for performance
-            if area_impacted and "salesforce" in area_impacted.lower():
-                assigned_team = "Salesforce Team"
-            elif area_impacted and ("billing" in area_impacted.lower() or "payment" in area_impacted.lower()):
-                assigned_team = "Billing Team"
-            elif area_impacted and "underwriting" in area_impacted.lower():
-                assigned_team = "Underwriting Team"
-            elif area_impacted and "claims" in area_impacted.lower():
-                assigned_team = "Claims Team"
-            elif area_impacted and ("portal" in area_impacted.lower() or "dashboard" in area_impacted.lower()):
-                assigned_team = "Portal Team"
-            else:
-                assigned_team = "Unassigned"
+            if area_impacted_raw:
+                if isinstance(area_impacted_raw, list) and area_impacted_raw:
+                    # If it's a list, join all values or take first non-empty
+                    valid_items = [str(item).strip() for item in area_impacted_raw if item and str(item).strip()]
+                    if valid_items:
+                        area_impacted = ", ".join(valid_items)
+                elif isinstance(area_impacted_raw, str) and area_impacted_raw.strip():
+                    area_impacted = area_impacted_raw.strip()
+                elif area_impacted_raw and str(area_impacted_raw).strip():
+                    # Handle other types (numbers, etc.)
+                    area_impacted = str(area_impacted_raw).strip()
+            
+            # Fallback to other potential fields if still Unknown
+            if area_impacted == "Unknown":
+                for fallback_field in ["System Impacted", "System", "Component", "Area"]:
+                    fallback_value = fields.get(fallback_field)
+                    if fallback_value and str(fallback_value).strip():
+                        area_impacted = str(fallback_value).strip()
+                        break
+            
+            # Use team assignment service with CSV data
+            assigned_team = team_service.assign_team(
+                area_impacted=area_impacted,
+                description=fields.get("Notes", ""),
+                type_of_issue=fields.get("Type of Issue", "")
+            )
             
             # Calculate week (Monday of the created date)
             created_date = fields.get("Created", fields.get("Reported On", ""))
@@ -285,7 +309,7 @@ def get_feedback_by_id(feedback_id: str):
             
             return {
                 "id": row[0],
-                "description": get_description(fields.get("Notes", ""), fields.get("Resolution Notes", "")),
+                "description": get_description(fields),
                 "priority": mapped_priority,
                 "team": assigned_team,
                 "environment": environment_val,

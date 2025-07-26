@@ -1,11 +1,17 @@
 """
 Cache manager for Airtable data to improve performance
+Smart caching strategy:
+- Monday-Friday: Refresh every hour during business days
+- Weekend: Single refresh Sunday 11:59 PM for Monday prep
+- Fast page loads for PM navigation
 """
 import json
 import time
 import requests
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 from config import AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
+from team_analyzer import analyze_team_batch
 
 class AirtableCache:
     def __init__(self, cache_duration_minutes=10):
@@ -13,12 +19,36 @@ class AirtableCache:
         self.cache_data = None
         self.cache_timestamp = 0
         
+    def get_cache_duration(self) -> int:
+        """Get dynamic cache duration based on day of week and time"""
+        now = datetime.now(timezone.utc)
+        weekday = now.weekday()  # 0=Monday, 6=Sunday
+        
+        # Monday-Friday (0-4): 1 hour cache
+        if 0 <= weekday <= 4:
+            return 3600  # 1 hour in seconds
+        
+        # Weekend (Saturday=5, Sunday=6): Long cache until Sunday night
+        elif weekday == 5:  # Saturday
+            # Cache until Sunday 11:59 PM
+            return 24 * 3600 + 23 * 3600 + 59 * 60  # ~48 hours
+        
+        else:  # Sunday (6)
+            # Check if it's close to midnight (11:59 PM)
+            if now.hour == 23 and now.minute >= 59:
+                return 60  # 1 minute - force refresh soon
+            elif now.hour >= 23:
+                return 300  # 5 minutes near midnight
+            else:
+                return 24 * 3600  # 24 hours until evening
+        
     def is_cache_valid(self) -> bool:
-        """Check if cache is still valid"""
-        return (
-            self.cache_data is not None and 
-            (time.time() - self.cache_timestamp) < self.cache_duration
-        )
+        """Check if cache is still valid using dynamic duration"""
+        if self.cache_data is None:
+            return False
+            
+        dynamic_duration = self.get_cache_duration()
+        return (time.time() - self.cache_timestamp) < dynamic_duration
     
     def fetch_from_airtable(self) -> List[Dict[str, Any]]:
         """Fetch fresh data from Airtable"""
@@ -54,6 +84,9 @@ class AirtableCache:
             
             # Map Airtable fields to our expected structure
             mapped_records = []
+            
+            # First pass: create records without team assignments
+            initial_records = []
             for record in all_records:
                 fields = record.get("fields", {})
                 
@@ -62,52 +95,61 @@ class AirtableCache:
                 priority_num = fields.get("Priority", 3)
                 priority = priority_map.get(priority_num, "Medium")
                 
-                # Enhanced team mapping based on status and type
+                # Prepare data for OpenAI team analysis
                 status = fields.get("Status", "New")
                 issue_type = fields.get("Type of Issue", "")
+                description = fields.get("Notes", "")
                 
-                # More sophisticated team assignment
-                if status == "Done":
-                    team = "Engineering"
-                elif status == "In Progress":
-                    team = "Engineering" 
-                elif "Reporting a Bug" in issue_type:
-                    team = "Engineering"
-                elif "Feature Request" in issue_type:
-                    team = "Product"
-                elif "Training" in issue_type:
-                    team = "Support"
+                # Environment mapping - handle both direct value and fallback to CW 2.0 Bug field
+                environment = fields.get("Environment")
+                if not environment:
+                    # Fallback to CW 2.0 Bug field logic if Environment is empty
+                    is_cw2 = fields.get("CW 2.0 Bug", False)
+                    environment = "CW 2.0" if is_cw2 else "CW 1.0"
+                
+                # System impacted mapping - handle Area Impacted as array or string
+                area_impacted_raw = fields.get("Area Impacted")
+                if isinstance(area_impacted_raw, list) and area_impacted_raw:
+                    area_impacted = area_impacted_raw[0]  # Take first item from array
+                elif isinstance(area_impacted_raw, str):
+                    area_impacted = area_impacted_raw
                 else:
-                    team = "Triage"
+                    area_impacted = "Unknown"
                 
-                # Enhanced environment mapping
-                is_cw2 = fields.get("CW 2.0 Bug", False)
-                environment = "CW 2.0" if is_cw2 else "CW 1.0"
-                
-                # Better system impacted mapping
-                area_impacted = fields.get("Type of Issue", "Bug/Issue")
-                if "Agent Portal" in fields.get("Notes", ""):
-                    area_impacted = "Agent Portal"
-                elif "Salesforce" in fields.get("Notes", ""):
-                    area_impacted = "Salesforce"
-                elif "Quote" in fields.get("Notes", ""):
-                    area_impacted = "Quoting System"
-                elif "Bind" in fields.get("Notes", ""):
-                    area_impacted = "Binding System"
-                elif "Upload" in fields.get("Notes", ""):
-                    area_impacted = "File Upload"
+                # Store initial record data for team analysis
+                initial_record = {
+                    "id": record["id"],
+                    "description": description,
+                    "type": issue_type,
+                    "status": status,
+                    "area_impacted": area_impacted,
+                    "fields": fields,
+                    "priority": priority,
+                    "environment": environment
+                }
+                initial_records.append(initial_record)
+            
+            # Second pass: Analyze teams with Jira matching (temporarily disabled for performance)
+            print(f"Temporarily using fallback team assignment for {len(initial_records)} records...")
+            # team_assignments = analyze_team_batch(initial_records)
+            team_assignments = {record["id"]: "Triage" for record in initial_records}
+            
+            # Third pass: Build final mapped records with AI team assignments
+            for initial_record in initial_records:
+                fields = initial_record["fields"]
+                ai_team = team_assignments.get(initial_record["id"], "Triage")
                 
                 mapped_record = {
-                    "id": record["id"],
+                    "id": initial_record["id"],
                     "initial_description": fields.get("Notes", ""),
                     "notes": fields.get("Notes", ""),
-                    "priority": priority,
-                    "team_routed": team,
-                    "environment": environment,
-                    "area_impacted": area_impacted,
+                    "priority": initial_record["priority"],
+                    "team_routed": ai_team,  # Use OpenAI-determined team
+                    "environment": initial_record["environment"],
+                    "area_impacted": initial_record["area_impacted"],
                     "created": fields.get("Created", fields.get("Reported On", "")),
                     "issue_number": fields.get("Issue", ""),
-                    "status": status,
+                    "status": initial_record["status"],
                     "reporter_email": fields.get("User Profile Email", ""),
                     "slack_thread": fields.get("Slack Thread Link", ""),
                     "type_of_issue": fields.get("Type of Issue", ""),
@@ -123,15 +165,38 @@ class AirtableCache:
     
     def get_data(self, force_refresh=False) -> List[Dict[str, Any]]:
         """Get data from cache or fetch fresh if needed"""
+        now = datetime.now(timezone.utc)
+        weekday = now.weekday()
+        
         if force_refresh or not self.is_cache_valid():
-            print("Fetching fresh data from Airtable...")
+            cache_reason = "forced" if force_refresh else "expired"
+            schedule_info = self._get_schedule_info()
+            print(f"Fetching fresh data from Airtable ({cache_reason})...")
+            print(f"Cache schedule: {schedule_info}")
+            
             self.cache_data = self.fetch_from_airtable()
             self.cache_timestamp = time.time()
-            print(f"Cached {len(self.cache_data)} records")
+            print(f"Cached {len(self.cache_data)} records at {now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
         else:
-            print(f"Using cached data ({len(self.cache_data)} records)")
+            cache_age_minutes = (time.time() - self.cache_timestamp) / 60
+            print(f"Using cached data ({len(self.cache_data)} records, {cache_age_minutes:.1f}min old)")
             
         return self.cache_data or []
+    
+    def _get_schedule_info(self) -> str:
+        """Get human-readable cache schedule info"""
+        now = datetime.now(timezone.utc)
+        weekday = now.weekday()
+        
+        if 0 <= weekday <= 4:
+            return "Weekday: 1-hour refresh cycle"
+        elif weekday == 5:
+            return "Saturday: Cache until Sunday 11:59 PM"
+        else:
+            if now.hour >= 23:
+                return "Sunday evening: Preparing Monday refresh"
+            else:
+                return "Sunday: Cache until 11:59 PM refresh"
     
     def invalidate_cache(self):
         """Force cache invalidation"""

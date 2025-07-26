@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports, users, airtable_test
+from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports, users, airtable_test, cache_status
 import os
 
 app = FastAPI(title="Voice of Customer API")
@@ -79,6 +79,7 @@ app.include_router(ai_summary.router, prefix="/ai-summary", tags=["AI"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(airtable_test.router, prefix="/test-airtable", tags=["Testing"])
+app.include_router(cache_status.router, prefix="/cache", tags=["Cache"])
 
 @app.get("/")
 def root():

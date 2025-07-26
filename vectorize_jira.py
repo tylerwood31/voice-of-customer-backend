@@ -19,7 +19,7 @@ except ImportError:
     print("Error: OpenAI package not installed. Run: pip install openai")
     exit(1)
 
-DB_PATH = "/Users/tylerwood/voice_of_customer/voice_of_customer.db"  # Adjust if needed
+from config import DB_PATH
 BATCH_SIZE = 100  # Process 100 tickets at a time
 
 def embed_text(text: str) -> np.ndarray:

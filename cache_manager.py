@@ -11,14 +11,10 @@ import requests
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from config import AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
-try:
-    from team_analyzer import analyze_team_batch
-    TEAM_ANALYSIS_AVAILABLE = True
-except ImportError:
-    print("Team analyzer not available, using fallback")
-    TEAM_ANALYSIS_AVAILABLE = False
-    def analyze_team_batch(issues):
-        return {issue.get("id", ""): "Triage" for issue in issues}
+# Disable team analysis completely for reliable deployment
+TEAM_ANALYSIS_AVAILABLE = False
+def analyze_team_batch(issues):
+    return {issue.get("id", ""): "Triage" for issue in issues}
 
 class AirtableCache:
     def __init__(self, cache_duration_minutes=10):

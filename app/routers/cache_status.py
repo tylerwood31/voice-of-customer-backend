@@ -5,9 +5,9 @@ import os
 
 router = APIRouter()
 
-# Import intelligent cache system
+# Import new intelligent cache system
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from intelligent_cache import intelligent_cache
+import intelligent_cache
 
 @router.get("/", summary="Get intelligent cache status and statistics")
 def get_cache_status():
@@ -16,44 +16,47 @@ def get_cache_status():
     weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     current_weekday = weekday_names[now.weekday()]
     
-    # Get cache statistics from intelligent cache
-    cache_stats = intelligent_cache.get_cache_stats()
+    # Get cache status from new cache system
+    cache_status = intelligent_cache.get_status()
     
     return {
         "current_time": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
         "current_weekday": current_weekday,
-        "cache_type": "intelligent_incremental",
-        "cache_status": cache_stats,
+        "cache_type": "new_architecture",
+        "cache_status": cache_status,
         "schedule": {
             "strategy": {
-                "sunday": "Full refresh - ALL records from Airtable",
-                "monday_to_saturday": "Incremental updates - NEW records only",
-                "page_loads": "Always use local database (fast)"
-            },
-            "update_frequency": "Hourly check for new records",
-            "is_full_refresh_day": intelligent_cache.should_do_full_refresh()
+                "full_refresh": "Load all 2025 records from Airtable",
+                "incremental": "Load records modified since last update",
+                "storage": "JSON fields in SQLite with WAL mode"
+            }
         },
         "actions": {
             "force_incremental": "/api/cache/update-incremental",
             "force_full_refresh": "/api/cache/update-full",
-            "get_stats": "/api/cache/"
+            "get_status": "/api/cache/"
         }
     }
 
 @router.post("/update-incremental", summary="Force incremental update")
 def force_incremental_update(background_tasks: BackgroundTasks):
     """Force an incremental update (new records only)."""
-    background_tasks.add_task(intelligent_cache.update_cache, False)
+    # Get last update time for incremental refresh
+    status = intelligent_cache.get_status()
+    since = status.get("last_update") if status else None
+    
+    background_tasks.add_task(intelligent_cache.refresh_incremental, since or "1970-01-01T00:00:00Z")
     return {
         "message": "Incremental cache update started in background",
         "type": "incremental",
+        "since": since,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     }
 
 @router.post("/update-full", summary="Force full refresh")
 def force_full_refresh(background_tasks: BackgroundTasks):
     """Force a full refresh (all records)."""
-    background_tasks.add_task(intelligent_cache.update_cache, True)
+    background_tasks.add_task(intelligent_cache.refresh_full)
     return {
         "message": "Full cache refresh started in background",
         "type": "full_refresh",
@@ -63,27 +66,26 @@ def force_full_refresh(background_tasks: BackgroundTasks):
 @router.get("/stats", summary="Get detailed cache statistics")
 def get_detailed_stats():
     """Get detailed cache statistics."""
-    cache_stats = intelligent_cache.get_cache_stats()
-    jira_status = intelligent_cache.get_jira_vectorization_status()
+    cache_status = intelligent_cache.get_status()
     
     return {
-        "cache": cache_stats,
-        "jira_vectorization": jira_status
+        "cache": cache_status
     }
 
-@router.post("/vectorize-jira", summary="Vectorize Jira tickets")
-def vectorize_jira_tickets(background_tasks: BackgroundTasks):
-    """Start Jira ticket vectorization in background."""
-    background_tasks.add_task(intelligent_cache.force_vectorize_jira)
-    return {
-        "message": "Jira vectorization started in background",
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    }
-
-@router.get("/jira-status", summary="Get Jira vectorization status")
-def get_jira_status():
-    """Get current Jira vectorization status."""
-    return intelligent_cache.get_jira_vectorization_status()
+@router.post("/init-schema", summary="Initialize database schema")
+def init_schema():
+    """Initialize the new cache database schema."""
+    try:
+        intelligent_cache.init_schema()
+        return {
+            "message": "Database schema initialized successfully",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
+    except Exception as e:
+        return {
+            "error": f"Schema initialization failed: {str(e)}",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
 
 @router.get("/debug", summary="Debug environment configuration")
 def debug_environment():
@@ -113,14 +115,14 @@ def force_full_refresh_sync():
     try:
         start_time = datetime.now(timezone.utc)
         
-        # Run cache update directly (not in background)
-        intelligent_cache.update_cache(True)
+        # Run cache refresh directly (not in background)
+        result = intelligent_cache.refresh_full()
         
         end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
         
-        # Get updated stats
-        cache_stats = intelligent_cache.get_cache_stats()
+        # Get updated status
+        cache_status = intelligent_cache.get_status()
         
         return {
             "message": "Full cache refresh completed synchronously",
@@ -128,7 +130,8 @@ def force_full_refresh_sync():
             "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
             "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
             "duration_seconds": duration,
-            "cache_stats": cache_stats
+            "result": result,
+            "cache_status": cache_status
         }
         
     except Exception as e:
@@ -143,8 +146,11 @@ def force_full_refresh_sync():
 def test_airtable_connection():
     """Test Airtable connection and see what data we're getting."""
     try:
+        from airtable import fetch_all_records
+        from config import AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
+        
         # Test Airtable connection directly
-        records = intelligent_cache.fetch_airtable_records()
+        records = fetch_all_records(AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
         
         return {
             "success": True,

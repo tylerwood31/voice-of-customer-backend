@@ -3,8 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database configuration - prioritize persistent disk path
-DB_PATH = os.getenv("DATABASE_PATH", "./voice_of_customer.db")
+# Database configuration - use Render persistent disk path
+DB_PATH = os.getenv("DATABASE_PATH", "/data/voice_of_customer.db")
 
 # Ensure the directory exists if using a mounted disk
 db_dir = os.path.dirname(DB_PATH)

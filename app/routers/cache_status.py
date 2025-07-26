@@ -66,9 +66,14 @@ def get_cache_status():
                 "sunday": "Cache until 11:59 PM, then refresh for Monday"
             }
         },
+        "team_analysis": {
+            "assignments_count": len(airtable_cache.team_assignments),
+            "last_analysis": datetime.fromtimestamp(airtable_cache.team_analysis_timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") if airtable_cache.team_analysis_timestamp else "Never"
+        },
         "actions": {
             "force_refresh": "/api/cache/refresh",
-            "invalidate": "/api/cache/invalidate"
+            "invalidate": "/api/cache/invalidate",
+            "force_team_analysis": "/api/cache/analyze-teams"
         }
     }
 
@@ -90,3 +95,19 @@ def invalidate_cache():
         "message": "Cache invalidated successfully",
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     }
+
+@router.post("/analyze-teams", summary="Force team analysis")
+def force_team_analysis():
+    """Force team analysis for all cached records."""
+    try:
+        airtable_cache.force_team_analysis()
+        return {
+            "message": "Team analysis completed successfully",
+            "assignments_count": len(airtable_cache.team_assignments),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
+    except Exception as e:
+        return {
+            "error": f"Team analysis failed: {e}",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }

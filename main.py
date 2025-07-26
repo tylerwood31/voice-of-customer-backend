@@ -18,6 +18,11 @@ async def startup_event():
         init_users_table()
         print("✅ Users table initialized successfully")
         
+        # Load Jira data if missing (prevents data loss on deployment)
+        from startup_data_loader import ensure_jira_data_loaded
+        ensure_jira_data_loaded()
+        print("✅ Jira data check completed")
+        
     except Exception as e:
         print(f"❌ Warning: Could not initialize database: {e}")
         # Create a minimal fallback

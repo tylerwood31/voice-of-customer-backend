@@ -11,9 +11,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
     from semantic_router import find_related_tickets
+    SEMANTIC_ROUTER_AVAILABLE = True
 except ImportError:
-    print("Warning: Could not import semantic_router, team assignment will fallback to 'Triage'")
+    print("Warning: Could not import semantic_router, using simple text matching")
     find_related_tickets = None
+    SEMANTIC_ROUTER_AVAILABLE = False
 
 from config import DB_PATH
 
@@ -30,8 +32,9 @@ def analyze_team_assignment(issue_description: str, issue_type: str = "", status
     Returns:
         Team name as string
     """
-    if not find_related_tickets or not issue_description:
-        return "Triage"  # Fallback if no semantic router or description
+    if not SEMANTIC_ROUTER_AVAILABLE or not issue_description:
+        # Use simple text matching instead
+        return analyze_team_assignment_simple(issue_description, issue_type, status, area_impacted)
     
     try:
         # Find the most similar Jira tickets
@@ -213,6 +216,21 @@ def analyze_team_simple_matching(issues: list) -> Dict[str, str]:
     except Exception as e:
         print(f"Error in simple team matching: {e}")
         return {issue.get("id", ""): "Triage" for issue in issues}
+
+def analyze_team_assignment_simple(description: str, issue_type: str = "", status: str = "", area_impacted: str = "") -> str:
+    """
+    Simple single-issue team assignment using text matching.
+    """
+    issues = [{
+        "id": "temp",
+        "description": description,
+        "type": issue_type,
+        "status": status,
+        "area_impacted": area_impacted
+    }]
+    
+    result = analyze_team_simple_matching(issues)
+    return result.get("temp", "Triage")
 
 # Initialize table on import
 ensure_jira_table_exists()

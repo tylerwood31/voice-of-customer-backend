@@ -84,3 +84,23 @@ def vectorize_jira_tickets(background_tasks: BackgroundTasks):
 def get_jira_status():
     """Get current Jira vectorization status."""
     return intelligent_cache.get_jira_vectorization_status()
+
+@router.get("/debug", summary="Debug environment configuration")
+def debug_environment():
+    """Debug endpoint to check environment configuration."""
+    import os
+    from config import DB_PATH, AIRTABLE_API_KEY, AIRTABLE_BASE_ID
+    
+    return {
+        "database_path": DB_PATH,
+        "db_path_exists": os.path.exists(DB_PATH),
+        "db_directory_exists": os.path.exists(os.path.dirname(DB_PATH)),
+        "db_directory_writable": os.access(os.path.dirname(DB_PATH), os.W_OK) if os.path.exists(os.path.dirname(DB_PATH)) else False,
+        "airtable_key_configured": bool(AIRTABLE_API_KEY),
+        "airtable_base_configured": bool(AIRTABLE_BASE_ID),
+        "environment_vars": {
+            "DATABASE_PATH": os.getenv("DATABASE_PATH"),
+            "AIRTABLE_API_KEY": "***" if AIRTABLE_API_KEY else None,
+            "AIRTABLE_BASE_ID": AIRTABLE_BASE_ID,
+        }
+    }

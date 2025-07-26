@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from config import DB_PATH, AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
 from database_manager import db_manager
+from db_connection import db_conn
 
 class IntelligentCache:
     def __init__(self):
@@ -144,147 +145,144 @@ class IntelligentCache:
             return
         
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # If full refresh, clear existing data
-            if is_full_refresh:
-                cursor.execute("DELETE FROM feedback")
-                print("🗑️ Cleared existing feedback records for full refresh")
-            
-            # Insert/update records
-            inserted_count = 0
-            updated_count = 0
-            
-            for record in records:
-                # Check if record exists
-                cursor.execute("SELECT id FROM feedback WHERE id = ?", (record["id"],))
-                exists = cursor.fetchone()
+            with db_conn() as conn:
+                cursor = conn.cursor()
                 
-                if exists:
-                    # Update existing record
-                    cursor.execute("""
-                        UPDATE feedback SET
-                            initial_description = ?,
-                            notes = ?,
-                            priority = ?,
-                            team_routed = ?,
-                            environment = ?,
-                            area_impacted = ?,
-                            created = ?,
-                            issue_number = ?,
-                            status = ?,
-                            reporter_email = ?,
-                            slack_thread = ?,
-                            type_of_issue = ?,
-                            triage_rep = ?,
-                            last_updated = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    """, (
-                        record["initial_description"], record["notes"], record["priority"],
-                        record["team_routed"], record["environment"], record["area_impacted"],
-                        record["created"], record["issue_number"], record["status"],
-                        record["reporter_email"], record["slack_thread"], record["type_of_issue"],
-                        record["triage_rep"], record["id"]
-                    ))
-                    updated_count += 1
-                else:
-                    # Insert new record
-                    cursor.execute("""
-                        INSERT INTO feedback (
-                            id, initial_description, notes, priority, team_routed,
-                            environment, area_impacted, created, issue_number, status,
-                            reporter_email, slack_thread, type_of_issue, triage_rep
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        record["id"], record["initial_description"], record["notes"],
-                        record["priority"], record["team_routed"], record["environment"],
-                        record["area_impacted"], record["created"], record["issue_number"],
-                        record["status"], record["reporter_email"], record["slack_thread"],
-                        record["type_of_issue"], record["triage_rep"]
-                    ))
-                    inserted_count += 1
-            
-            # Update last update timestamp
-            current_time = datetime.now(timezone.utc).isoformat()
-            db_manager.update_last_feedback_timestamp(current_time)
-            
-            conn.commit()
-            conn.close()
-            
-            print(f"💾 Database updated: {inserted_count} new, {updated_count} updated")
-            
+                # If full refresh, clear existing data
+                if is_full_refresh:
+                    cursor.execute("DELETE FROM feedback")
+                    print("🗑️ Cleared existing feedback records for full refresh")
+                
+                # Insert/update records
+                inserted_count = 0
+                updated_count = 0
+                
+                for record in records:
+                    # Check if record exists
+                    cursor.execute("SELECT id FROM feedback WHERE id = ?", (record["id"],))
+                    exists = cursor.fetchone()
+                    
+                    if exists:
+                        # Update existing record
+                        cursor.execute("""
+                            UPDATE feedback SET
+                                initial_description = ?,
+                                notes = ?,
+                                priority = ?,
+                                team_routed = ?,
+                                environment = ?,
+                                area_impacted = ?,
+                                created = ?,
+                                issue_number = ?,
+                                status = ?,
+                                reporter_email = ?,
+                                slack_thread = ?,
+                                type_of_issue = ?,
+                                triage_rep = ?,
+                                last_updated = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        """, (
+                            record["initial_description"], record["notes"], record["priority"],
+                            record["team_routed"], record["environment"], record["area_impacted"],
+                            record["created"], record["issue_number"], record["status"],
+                            record["reporter_email"], record["slack_thread"], record["type_of_issue"],
+                            record["triage_rep"], record["id"]
+                        ))
+                        updated_count += 1
+                    else:
+                        # Insert new record
+                        cursor.execute("""
+                            INSERT INTO feedback (
+                                id, initial_description, notes, priority, team_routed,
+                                environment, area_impacted, created, issue_number, status,
+                                reporter_email, slack_thread, type_of_issue, triage_rep
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            record["id"], record["initial_description"], record["notes"],
+                            record["priority"], record["team_routed"], record["environment"],
+                            record["area_impacted"], record["created"], record["issue_number"],
+                            record["status"], record["reporter_email"], record["slack_thread"],
+                            record["type_of_issue"], record["triage_rep"]
+                        ))
+                        inserted_count += 1
+                
+                # Update last update timestamp
+                current_time = datetime.now(timezone.utc).isoformat()
+                db_manager.update_last_feedback_timestamp(current_time)
+                
+                print(f"💾 Database updated: {inserted_count} new, {updated_count} updated")
+                
         except Exception as e:
             print(f"❌ Database storage error: {e}")
+            import traceback
+            traceback.print_exc()
     
     def get_feedback_from_database(self, filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """Get feedback records from database (fast local query)"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # First check if table exists and has data
-            cursor.execute("SELECT COUNT(*) FROM feedback")
-            total_count = cursor.fetchone()[0]
-            print(f"📊 Database has {total_count} feedback records")
-            
-            # Build query with optional filters
-            query = """
-                SELECT id, initial_description, notes, priority, team_routed,
-                       environment, area_impacted, created, issue_number, status,
-                       reporter_email, slack_thread, type_of_issue, triage_rep
-                FROM feedback
-            """
-            
-            where_clauses = []
-            params = []
-            
-            if filters:
-                if filters.get("team"):
-                    where_clauses.append("team_routed = ?")
-                    params.append(filters["team"])
+            with db_conn() as conn:
+                cursor = conn.cursor()
                 
-                if filters.get("priority"):
-                    where_clauses.append("priority = ?")
-                    params.append(filters["priority"])
+                # First check if table exists and has data
+                cursor.execute("SELECT COUNT(*) FROM feedback")
+                total_count = cursor.fetchone()[0]
+                print(f"📊 Database has {total_count} feedback records")
                 
-                if filters.get("environment"):
-                    where_clauses.append("environment = ?")
-                    params.append(filters["environment"])
-            
-            if where_clauses:
-                query += " WHERE " + " AND ".join(where_clauses)
-            
-            query += " ORDER BY created DESC"
-            
-            print(f"🔍 Executing query: {query} with params: {params}")
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            print(f"📤 Query returned {len(rows)} rows")
-            
-            conn.close()
-            
-            # Convert to dict format
-            results = []
-            for row in rows:
-                results.append({
-                    "id": row[0],
-                    "description": row[1] or row[2],  # Use initial_description or notes
-                    "priority": row[3],
-                    "team": row[4],
-                    "environment": row[5],
-                    "area_impacted": row[6],
-                    "created": row[7],
-                    "issue_number": row[8],
-                    "status": row[9],
-                    "reporter_email": row[10],
-                    "slack_thread": row[11],
-                    "type_of_issue": row[12],
-                    "triage_rep": row[13]
-                })
-            
-            print(f"✅ Returning {len(results)} formatted results")
-            return results
+                # Build query with optional filters
+                query = """
+                    SELECT id, initial_description, notes, priority, team_routed,
+                           environment, area_impacted, created, issue_number, status,
+                           reporter_email, slack_thread, type_of_issue, triage_rep
+                    FROM feedback
+                """
+                
+                where_clauses = []
+                params = []
+                
+                if filters:
+                    if filters.get("team"):
+                        where_clauses.append("team_routed = ?")
+                        params.append(filters["team"])
+                    
+                    if filters.get("priority"):
+                        where_clauses.append("priority = ?")
+                        params.append(filters["priority"])
+                    
+                    if filters.get("environment"):
+                        where_clauses.append("environment = ?")
+                        params.append(filters["environment"])
+                
+                if where_clauses:
+                    query += " WHERE " + " AND ".join(where_clauses)
+                
+                query += " ORDER BY created DESC"
+                
+                print(f"🔍 Executing query: {query} with params: {params}")
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                print(f"📤 Query returned {len(rows)} rows")
+                
+                # Convert to dict format
+                results = []
+                for row in rows:
+                    results.append({
+                        "id": row[0],
+                        "description": row[1] or row[2],  # Use initial_description or notes
+                        "priority": row[3],
+                        "team": row[4],
+                        "environment": row[5],
+                        "area_impacted": row[6],
+                        "created": row[7],
+                        "issue_number": row[8],
+                        "status": row[9],
+                        "reporter_email": row[10],
+                        "slack_thread": row[11],
+                        "type_of_issue": row[12],
+                        "triage_rep": row[13]
+                    })
+                
+                print(f"✅ Returning {len(results)} formatted results")
+                return results
             
         except Exception as e:
             print(f"❌ Database query error: {e}")
@@ -331,42 +329,40 @@ class IntelligentCache:
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Get total count
-            cursor.execute("SELECT COUNT(*) FROM feedback")
-            total_count = cursor.fetchone()[0]
-            
-            # Get last update time
-            last_update = self.get_last_update_timestamp()
-            
-            # Get records by environment
-            cursor.execute("""
-                SELECT environment, COUNT(*) 
-                FROM feedback 
-                GROUP BY environment
-            """)
-            env_stats = dict(cursor.fetchall())
-            
-            # Get records by team
-            cursor.execute("""
-                SELECT team_routed, COUNT(*) 
-                FROM feedback 
-                GROUP BY team_routed
-            """)
-            team_stats = dict(cursor.fetchall())
-            
-            conn.close()
-            
-            return {
-                "total_records": total_count,
-                "last_update": last_update,
-                "environment_distribution": env_stats,
-                "team_distribution": team_stats,
-                "next_check_in_minutes": max(0, (self.update_frequency - (time.time() - self.last_update_check)) / 60),
-                "is_sunday": self.should_do_full_refresh()
-            }
+            with db_conn() as conn:
+                cursor = conn.cursor()
+                
+                # Get total count
+                cursor.execute("SELECT COUNT(*) FROM feedback")
+                total_count = cursor.fetchone()[0]
+                
+                # Get last update time
+                last_update = self.get_last_update_timestamp()
+                
+                # Get records by environment
+                cursor.execute("""
+                    SELECT environment, COUNT(*) 
+                    FROM feedback 
+                    GROUP BY environment
+                """)
+                env_stats = dict(cursor.fetchall())
+                
+                # Get records by team
+                cursor.execute("""
+                    SELECT team_routed, COUNT(*) 
+                    FROM feedback 
+                    GROUP BY team_routed
+                """)
+                team_stats = dict(cursor.fetchall())
+                
+                return {
+                    "total_records": total_count,
+                    "last_update": last_update,
+                    "environment_distribution": env_stats,
+                    "team_distribution": team_stats,
+                    "next_check_in_minutes": max(0, (self.update_frequency - (time.time() - self.last_update_check)) / 60),
+                    "is_sunday": self.should_do_full_refresh()
+                }
             
         except Exception as e:
             return {"error": str(e)}
@@ -381,39 +377,36 @@ class IntelligentCache:
             
             print(f"🤖 Analyzing team assignments for {len(records)} new records...")
             
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            analyzed_count = 0
-            for record in records:
-                try:
-                    # Analyze team assignment
-                    team = analyze_team_assignment(
-                        issue_description=record.get("initial_description", ""),
-                        issue_type=record.get("type_of_issue", ""),
-                        status=record.get("status", ""),
-                        area_impacted=record.get("area_impacted", "")
-                    )
-                    
-                    # Update team assignment in database
-                    cursor.execute(
-                        "UPDATE feedback SET team_routed = ? WHERE id = ?",
-                        (team, record["id"])
-                    )
-                    
-                    analyzed_count += 1
-                    
-                    if analyzed_count % 5 == 0:
-                        print(f"📊 Analyzed {analyzed_count}/{len(records)} records")
+            with db_conn() as conn:
+                cursor = conn.cursor()
                 
-                except Exception as e:
-                    print(f"⚠️ Team analysis failed for record {record.get('id')}: {e}")
-                    continue
-            
-            conn.commit()
-            conn.close()
-            
-            print(f"✅ Team analysis completed: {analyzed_count} records processed")
+                analyzed_count = 0
+                for record in records:
+                    try:
+                        # Analyze team assignment
+                        team = analyze_team_assignment(
+                            issue_description=record.get("initial_description", ""),
+                            issue_type=record.get("type_of_issue", ""),
+                            status=record.get("status", ""),
+                            area_impacted=record.get("area_impacted", "")
+                        )
+                        
+                        # Update team assignment in database
+                        cursor.execute(
+                            "UPDATE feedback SET team_routed = ? WHERE id = ?",
+                            (team, record["id"])
+                        )
+                        
+                        analyzed_count += 1
+                        
+                        if analyzed_count % 5 == 0:
+                            print(f"📊 Analyzed {analyzed_count}/{len(records)} records")
+                    
+                    except Exception as e:
+                        print(f"⚠️ Team analysis failed for record {record.get('id')}: {e}")
+                        continue
+                
+                print(f"✅ Team analysis completed: {analyzed_count} records processed")
             
         except Exception as e:
             print(f"❌ Team analysis batch failed: {e}")

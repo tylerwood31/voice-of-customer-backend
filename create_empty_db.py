@@ -26,7 +26,11 @@ def create_empty_database():
         sample_data = [
             ('demo-1', 'Sample feedback record', '', 'Medium', 'Engineering', 'Production', 'System Issue', '2025-01-20'),
             ('demo-2', 'Another sample record', '', 'High', 'Support', 'Staging', 'User Interface', '2025-01-21'),
-            ('demo-3', 'Third demo record', '', 'Low', 'Marketing', 'Development', 'Documentation', '2025-01-22')
+            ('demo-3', 'Third demo record', '', 'Low', 'Marketing', 'Development', 'Documentation', '2025-01-22'),
+            ('demo-4', 'Customer login issues reported', '', 'High', 'Engineering', 'Production', 'Authentication', '2025-01-23'),
+            ('demo-5', 'UI responsiveness problems on mobile', '', 'Medium', 'Design', 'Production', 'Mobile App', '2025-01-24'),
+            ('demo-6', 'Database query performance degradation', '', 'High', 'Engineering', 'Production', 'Database', '2025-01-25'),
+            ('demo-7', 'Feature request for bulk operations', '', 'Low', 'Product', 'Staging', 'Features', '2025-01-26')
         ]
         
         cursor.executemany('''

@@ -13,3 +13,9 @@ services:
         value: /data/voice_of_customer.db
       - key: OPENAI_API_KEY
         sync: false  # Set manually in Render dashboard
+      - key: AIRTABLE_API_KEY
+        sync: false  # Set manually in Render dashboard  
+      - key: AIRTABLE_BASE_ID
+        sync: false  # Set manually in Render dashboard
+      - key: AIRTABLE_TABLE_NAME
+        value: "Imported table"

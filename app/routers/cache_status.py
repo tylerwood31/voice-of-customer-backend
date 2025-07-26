@@ -104,3 +104,35 @@ def debug_environment():
             "AIRTABLE_BASE_ID": AIRTABLE_BASE_ID,
         }
     }
+
+@router.post("/update-full-sync", summary="Force full refresh synchronously")
+def force_full_refresh_sync():
+    """Force a full refresh (all records) synchronously to see real-time results."""
+    try:
+        start_time = datetime.now(timezone.utc)
+        
+        # Run cache update directly (not in background)
+        intelligent_cache.update_cache(True)
+        
+        end_time = datetime.now(timezone.utc)
+        duration = (end_time - start_time).total_seconds()
+        
+        # Get updated stats
+        cache_stats = intelligent_cache.get_cache_stats()
+        
+        return {
+            "message": "Full cache refresh completed synchronously",
+            "type": "full_refresh_sync",
+            "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "duration_seconds": duration,
+            "cache_stats": cache_stats
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "error": f"Cache refresh failed: {str(e)}",
+            "traceback": traceback.format_exc(),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }

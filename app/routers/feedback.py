@@ -128,9 +128,19 @@ def get_feedback(
             cursor.execute(query, params)
             rows = cursor.fetchall()
             
-            # Get team assignments for all records in batch
-            records_data = [(row[0], json.loads(row[1])) for row in rows]
-            team_assignments = get_team_assignments_batch(records_data)
+            # Get team assignments for all records in batch (with size limit)
+            try:
+                if len(rows) > 1000:
+                    # For large datasets, skip team assignment to avoid timeout
+                    # Team assignment will fall back to area-based logic per record
+                    team_assignments = {}
+                    print(f"⚠️ Skipping batch team assignment for {len(rows)} records (too large)")
+                else:
+                    records_data = [(row[0], json.loads(row[1])) for row in rows]
+                    team_assignments = get_team_assignments_batch(records_data)
+            except Exception as e:
+                print(f"⚠️ Batch team assignment failed: {e}")
+                team_assignments = {}
             
             # Convert to our response format
             results = []
@@ -159,8 +169,25 @@ def get_feedback(
                     else:
                         area_impacted = "Unknown"
                     
-                    # Get team assignment from cached batch results
-                    assigned_team = team_assignments.get(row[0], "Triage")
+                    # Get team assignment from cached batch results or fallback
+                    assigned_team = team_assignments.get(row[0])
+                    if not assigned_team:
+                        # Fallback to area-based assignment
+                        if area_impacted:
+                            if "salesforce" in area_impacted.lower():
+                                assigned_team = "Salesforce Team"
+                            elif "billing" in area_impacted.lower() or "payment" in area_impacted.lower():
+                                assigned_team = "Billing Team"
+                            elif "underwriting" in area_impacted.lower():
+                                assigned_team = "Underwriting Team"
+                            elif "claims" in area_impacted.lower():
+                                assigned_team = "Claims Team"
+                            elif "portal" in area_impacted.lower() or "dashboard" in area_impacted.lower():
+                                assigned_team = "Portal Team"
+                            else:
+                                assigned_team = "Triage"
+                        else:
+                            assigned_team = "Triage"
                     
                     record = {
                         "id": row[0],

@@ -198,3 +198,45 @@ def test_airtable_connection():
             "traceback": traceback.format_exc(),
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         }
+
+@router.get("/semantic-analyzer-status", summary="Check semantic analyzer and team assignment status")
+def get_semantic_analyzer_status():
+    """Check semantic analyzer status and team assignment functionality."""
+    try:
+        from semantic_analyzer import semantic_analyzer
+        
+        # Get vectorization status
+        vectorization_status = semantic_analyzer.get_vectorization_status()
+        
+        # Test team assignment on a sample record
+        sample_issues = [
+            {
+                "id": "test1",
+                "description": "User cannot log into Salesforce",
+                "type": "Bug",
+                "status": "New",
+                "area_impacted": "Salesforce"
+            }
+        ]
+        
+        team_assignments = {}
+        try:
+            team_assignments = semantic_analyzer.assign_teams_to_issues(sample_issues)
+        except Exception as team_error:
+            team_assignments = {"error": str(team_error)}
+        
+        return {
+            "semantic_analyzer_available": True,
+            "vectorization_status": vectorization_status,
+            "sample_team_assignment": team_assignments,
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "semantic_analyzer_available": False,
+            "error": f"Semantic analyzer failed: {str(e)}",
+            "traceback": traceback.format_exc(),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }

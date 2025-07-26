@@ -27,7 +27,7 @@ def fetch_airtable_data():
             if offset:
                 params["offset"] = offset
                 
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code != 200:
                 break
                 

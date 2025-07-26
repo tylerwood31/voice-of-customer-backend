@@ -1,10 +1,19 @@
 import os
 from dotenv import load_dotenv
-
 load_dotenv()
 
-# Database configuration - use Render persistent disk path
+# Always one source of truth
 DB_PATH = os.getenv("DATABASE_PATH", "/data/voice_of_customer.db")
+
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Lead Bugs")
+
+# Optional: turn on very loud logging in prod while we debug
+DEBUG_REFRESH = os.getenv("DEBUG_REFRESH", "false").lower() == "true"
+
+# OpenAI configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Ensure the directory exists if using a mounted disk
 db_dir = os.path.dirname(DB_PATH)
@@ -28,11 +37,3 @@ except Exception as e:
     if DB_PATH != "./voice_of_customer.db":
         print("🔄 Falling back to local database path")
         DB_PATH = "./voice_of_customer.db"
-
-# OpenAI configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Airtable configuration
-AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
-AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID") 
-AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Lead Bugs")

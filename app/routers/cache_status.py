@@ -136,3 +136,27 @@ def force_full_refresh_sync():
             "traceback": traceback.format_exc(),
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         }
+
+@router.get("/test-airtable", summary="Test direct Airtable connection")
+def test_airtable_connection():
+    """Test Airtable connection and see what data we're getting."""
+    try:
+        # Test Airtable connection directly
+        records = intelligent_cache.fetch_airtable_records()
+        
+        return {
+            "success": True,
+            "records_fetched": len(records),
+            "sample_fields": list(records[0].get("fields", {}).keys()) if records else [],
+            "sample_record_id": records[0]["id"] if records else None,
+            "sample_created": records[0].get("fields", {}).get("Created") if records else None,
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "error": f"Airtable connection failed: {str(e)}",
+            "traceback": traceback.format_exc(),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }

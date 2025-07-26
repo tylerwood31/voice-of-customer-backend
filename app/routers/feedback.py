@@ -4,7 +4,7 @@ import sqlite3
 import sys
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -12,7 +12,60 @@ router = APIRouter()
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 import intelligent_cache
 from db_connection import db_conn
+from semantic_analyzer import semantic_analyzer
 
+
+def get_team_assignment(description: str, area_impacted: str, type_of_issue: str) -> str:
+    \"\"\"
+    Assign team based on semantic analysis with area-based fallback.
+    \"\"\"
+    try:
+        # Create issue dictionary for semantic analyzer
+        issue = {
+            \"id\": \"temp\",
+            \"description\": description or \"\",
+            \"area_impacted\": area_impacted or \"\",
+            \"type\": type_of_issue or \"\",
+            \"status\": \"New\"
+        }
+        
+        # Use semantic analyzer to assign team
+        team_assignments = semantic_analyzer.assign_teams_to_issues([issue])
+        assigned_team = team_assignments.get(\"temp\", \"Unassigned\")
+        
+        # If semantic assignment failed or returned generic result, use area-based fallback
+        if assigned_team in [\"Triage\", \"Unassigned\"] and area_impacted:
+            area_lower = area_impacted.lower()
+            if \"salesforce\" in area_lower:
+                return \"Salesforce Team\"
+            elif \"billing\" in area_lower or \"payment\" in area_lower:
+                return \"Billing Team\"
+            elif \"underwriting\" in area_lower:
+                return \"Underwriting Team\"
+            elif \"claims\" in area_lower:
+                return \"Claims Team\"
+            elif \"portal\" in area_lower or \"dashboard\" in area_lower:
+                return \"Portal Team\"
+        
+        return assigned_team
+        
+    except Exception as e:
+        print(f\"Team assignment error: {e}\")
+        # Fallback to area-based assignment
+        if area_impacted:
+            area_lower = area_impacted.lower()
+            if \"salesforce\" in area_lower:
+                return \"Salesforce Team\"
+            elif \"billing\" in area_lower or \"payment\" in area_lower:
+                return \"Billing Team\"
+            elif \"underwriting\" in area_lower:
+                return \"Underwriting Team\"
+            elif \"claims\" in area_lower:
+                return \"Claims Team\"
+            elif \"portal\" in area_lower or \"dashboard\" in area_lower:
+                return \"Portal Team\"
+        
+        return \"Unassigned\"
 
 def get_description(initial_description: str, notes: str) -> str:
     """
@@ -23,12 +76,12 @@ def get_description(initial_description: str, notes: str) -> str:
     Logic: If InitialDescription is blank, use Notes field. 
     If both fields blank, return "No description".
     """
-    if initial_description and initial_description.strip():
-        return initial_description.strip()
-    elif notes and notes.strip():
+    # For now, just use notes field as the primary description
+    # Could be enhanced later to combine multiple description sources
+    if notes and notes.strip():
         return notes.strip()
     else:
-        return "No description"
+        return "No description provided"
 
 @router.get("/", summary="Get feedback with optional filters")
 def get_feedback(
@@ -85,23 +138,48 @@ def get_feedback(
                     else:
                         area_impacted = "Unknown"
                     
-                    # Default team assignment for now
-                    assigned_team = "Triage"
+                    # Use semantic team assignment with area-based fallback
+                    assigned_team = get_team_assignment(
+                        description=fields.get("Notes", ""),
+                        area_impacted=area_impacted,
+                        type_of_issue=fields.get("Type of Issue", "")
+                    )
+                    
+                    # Calculate week (Monday of the created date)
+                    created_date = fields.get("Created", fields.get("Reported On", ""))
+                    week_start = "N/A"
+                    if created_date:
+                        try:
+                            # Parse the date and find the Monday of that week
+                            if 'T' in created_date:
+                                dt = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+                            else:
+                                dt = datetime.fromisoformat(created_date)
+                            # Find Monday of that week (weekday 0 = Monday)
+                            days_since_monday = dt.weekday()
+                            from datetime import timedelta
+                            monday = dt - timedelta(days=days_since_monday)
+                            week_start = monday.strftime("%Y-%m-%d")
+                        except:
+                            week_start = "N/A"
                     
                     record = {
                         "id": row[0],
-                        "description": fields.get("Notes", ""),
+                        "description": get_description(fields.get("Notes", ""), fields.get("Resolution Notes", "")),
                         "priority": mapped_priority,
                         "team": assigned_team,
                         "environment": environment_val,
                         "area_impacted": area_impacted,
-                        "created": fields.get("Created", fields.get("Reported On", "")),
+                        "created": created_date,
+                        "week": week_start,
                         "issue_number": fields.get("Issue", ""),
                         "status": fields.get("Status", "New"),
                         "reporter_email": fields.get("User Profile Email", ""),
                         "slack_thread": fields.get("Slack Thread Link", ""),
                         "type_of_issue": fields.get("Type of Issue", ""),
-                        "triage_rep": fields.get("Triage Rep", "")
+                        "type_of_report": fields.get("Type of Issue", "N/A"),
+                        "source": fields.get("Source", "N/A"),
+                        "triage_rep": fields.get("Triage Rep", "N/A")
                     }
                     
                     # Apply filters
@@ -166,34 +244,48 @@ def get_feedback_by_id(feedback_id: str):
             else:
                 area_impacted = "Unknown"
             
-            # Simple area-based team assignment
-            if area_impacted and "salesforce" in area_impacted.lower():
-                assigned_team = "Salesforce Team"
-            elif area_impacted and ("billing" in area_impacted.lower() or "payment" in area_impacted.lower()):
-                assigned_team = "Billing Team"
-            elif area_impacted and "underwriting" in area_impacted.lower():
-                assigned_team = "Underwriting Team"
-            elif area_impacted and "claims" in area_impacted.lower():
-                assigned_team = "Claims Team"
-            elif area_impacted and ("portal" in area_impacted.lower() or "dashboard" in area_impacted.lower()):
-                assigned_team = "Portal Team"
-            else:
-                assigned_team = "Triage"
+            # Use semantic team assignment with area-based fallback
+            assigned_team = get_team_assignment(
+                description=fields.get("Notes", ""),
+                area_impacted=area_impacted,
+                type_of_issue=fields.get("Type of Issue", "")
+            )
+            
+            # Calculate week (Monday of the created date)
+            created_date = fields.get("Created", fields.get("Reported On", ""))
+            week_start = "N/A"
+            if created_date:
+                try:
+                    # Parse the date and find the Monday of that week
+                    if 'T' in created_date:
+                        dt = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+                    else:
+                        dt = datetime.fromisoformat(created_date)
+                    # Find Monday of that week (weekday 0 = Monday)
+                    days_since_monday = dt.weekday()
+                    from datetime import timedelta
+                    monday = dt - timedelta(days=days_since_monday)
+                    week_start = monday.strftime("%Y-%m-%d")
+                except:
+                    week_start = "N/A"
             
             return {
                 "id": row[0],
-                "description": fields.get("Notes", ""),
+                "description": get_description(fields.get("Notes", ""), fields.get("Resolution Notes", "")),
                 "priority": mapped_priority,
                 "team": assigned_team,
                 "environment": environment_val,
                 "area_impacted": area_impacted,
-                "created": fields.get("Created", fields.get("Reported On", "")),
+                "created": created_date,
+                "week": week_start,
                 "issue_number": fields.get("Issue", ""),
                 "status": fields.get("Status", "New"),
                 "reporter_email": fields.get("User Profile Email", ""),
                 "slack_thread": fields.get("Slack Thread Link", ""),
                 "type_of_issue": fields.get("Type of Issue", ""),
-                "triage_rep": fields.get("Triage Rep", ""),
+                "type_of_report": fields.get("Type of Issue", "N/A"),
+                "source": fields.get("Source", "N/A"),
+                "triage_rep": fields.get("Triage Rep", "N/A"),
                 "created_at": row[2],
                 "modified_at": row[3]
             }

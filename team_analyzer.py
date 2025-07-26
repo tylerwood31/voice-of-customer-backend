@@ -1,27 +1,34 @@
 """
-Jira-based team assignment using semantic similarity
+Robust team assignment using Jira ticket similarity analysis
 """
 import os
 import sys
 from typing import Dict, Any, List
 import sqlite3
+from config import DB_PATH, OPENAI_API_KEY
 
-# Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# Import our robust semantic analyzer
+from semantic_analyzer import semantic_analyzer
 
+# OpenAI setup for enhanced analysis
 try:
-    from semantic_router import find_related_tickets
-    SEMANTIC_ROUTER_AVAILABLE = True
+    from openai import OpenAI
+    if OPENAI_API_KEY:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        OPENAI_AVAILABLE = True
+    else:
+        openai_client = None
+        OPENAI_AVAILABLE = False
 except ImportError:
-    print("Warning: Could not import semantic_router, using simple text matching")
-    find_related_tickets = None
-    SEMANTIC_ROUTER_AVAILABLE = False
-
-from config import DB_PATH
+    openai_client = None
+    OPENAI_AVAILABLE = False
 
 def analyze_team_assignment(issue_description: str, issue_type: str = "", status: str = "", area_impacted: str = "") -> str:
     """
-    Use Jira ticket matching to determine team assignment based on semantic similarity.
+    Analyze team assignment using multiple strategies:
+    1. Jira ticket similarity (semantic or text-based)
+    2. OpenAI-enhanced analysis for edge cases
+    3. Rule-based fallback
     
     Args:
         issue_description: The main description/notes of the issue
@@ -32,46 +39,128 @@ def analyze_team_assignment(issue_description: str, issue_type: str = "", status
     Returns:
         Team name as string
     """
-    if not SEMANTIC_ROUTER_AVAILABLE or not issue_description:
-        # Use simple text matching instead
-        return analyze_team_assignment_simple(issue_description, issue_type, status, area_impacted)
+    if not issue_description or not issue_description.strip():
+        return "Triage"
     
     try:
-        # Find the most similar Jira tickets
-        jira_matches = find_related_tickets(issue_description, top_n=3)
+        # Step 1: Find similar Jira tickets using our robust semantic analyzer
+        jira_matches = semantic_analyzer.find_related_jira_tickets(issue_description, top_n=3)
         
-        if not jira_matches:
-            return "Triage"
-        
-        # Get the team from the best match (highest similarity)
-        best_match = jira_matches[0]
-        similarity, jira_id, jira_summary, assignee, team_name = best_match
-        
-        # Only use the match if similarity is reasonable (>0.7)
-        if similarity > 0.7 and team_name:
-            print(f"Matched to Jira {jira_id} (similarity: {similarity:.3f}) -> Team: {team_name}")
-            return team_name
-        
-        # If similarity is moderate (0.5-0.7), consider multiple matches
-        elif similarity > 0.5:
-            # Count team votes from top 3 matches
-            team_votes = {}
-            for sim, j_id, j_sum, j_assignee, j_team in jira_matches:
-                if sim > 0.5 and j_team:
-                    team_votes[j_team] = team_votes.get(j_team, 0) + sim
+        if jira_matches:
+            # Analyze the matches for team assignment
+            best_match = jira_matches[0]
+            similarity, jira_id, jira_summary, assignee, team_name = best_match
             
-            if team_votes:
-                # Return team with highest weighted vote
-                best_team = max(team_votes.items(), key=lambda x: x[1])
-                print(f"Team consensus from Jira matches: {best_team[0]} (score: {best_team[1]:.3f})")
-                return best_team[0]
+            # High confidence match
+            if similarity > 0.7 and team_name:
+                print(f"🎯 High confidence match: {jira_id} (similarity: {similarity:.3f}) -> {team_name}")
+                return team_name
+            
+            # Medium confidence - use weighted voting
+            elif similarity > 0.4:
+                team_votes = {}
+                for sim, j_id, j_sum, j_assignee, j_team in jira_matches:
+                    if sim > 0.3 and j_team:
+                        team_votes[j_team] = team_votes.get(j_team, 0) + sim
+                
+                if team_votes:
+                    best_team = max(team_votes.items(), key=lambda x: x[1])
+                    print(f"📊 Team consensus: {best_team[0]} (weighted score: {best_team[1]:.3f})")
+                    return best_team[0]
         
-        print(f"Low similarity ({similarity:.3f}) to Jira tickets, defaulting to Triage")
-        return "Triage"
+        # Step 2: If Jira matching is inconclusive, use OpenAI for enhanced analysis
+        if OPENAI_AVAILABLE:
+            openai_team = analyze_with_openai(issue_description, issue_type, status, area_impacted)
+            if openai_team != "Triage":
+                print(f"🤖 OpenAI assignment: {openai_team}")
+                return openai_team
+        
+        # Step 3: Rule-based fallback
+        rule_based_team = analyze_with_rules(issue_description, issue_type, status, area_impacted)
+        print(f"📋 Rule-based assignment: {rule_based_team}")
+        return rule_based_team
         
     except Exception as e:
-        print(f"Error in Jira team analysis: {e}")
+        print(f"❌ Team analysis error: {e}")
         return "Triage"
+
+def analyze_with_openai(description: str, issue_type: str, status: str, area_impacted: str) -> str:
+    """Use OpenAI to analyze team assignment when Jira matching is inconclusive"""
+    if not OPENAI_AVAILABLE:
+        return "Triage"
+    
+    try:
+        context = f"""
+        Issue Description: {description}
+        Type: {issue_type}
+        Status: {status}
+        Area Impacted: {area_impacted}
+        """
+        
+        prompt = f"""
+        You are a technical support specialist for CoverWallet, an insurance technology company.
+        
+        Analyze this customer issue and assign it to the most appropriate team:
+        
+        **Engineering** - Technical bugs, system errors, API issues, performance problems, code defects
+        **Product** - Feature requests, UX issues, workflow problems, business logic concerns
+        **Support** - Training questions, user education, account access, how-to questions
+        **Sales** - Pricing questions, quote issues, sales process, new business inquiries
+        **Billing Integrations** - Payment processing, billing systems, invoice issues
+        **Policies** - Policy management, underwriting, coverage questions
+        **Quote** - Quote generation, rating, pricing calculations
+        **Data Platform** - Data processing, analytics, reporting issues
+        **Triage** - Unclear issues that need investigation
+        
+        Issue details:
+        {context}
+        
+        Respond with ONLY the team name. No explanation.
+        """
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0.1
+        )
+        
+        team = response.choices[0].message.content.strip()
+        
+        # Validate response
+        valid_teams = [
+            "Engineering", "Product", "Support", "Sales", "Billing Integrations",
+            "Policies", "Quote", "Data Platform", "Triage"
+        ]
+        
+        return team if team in valid_teams else "Triage"
+        
+    except Exception as e:
+        print(f"⚠️ OpenAI analysis failed: {e}")
+        return "Triage"
+
+def analyze_with_rules(description: str, issue_type: str, status: str, area_impacted: str) -> str:
+    """Rule-based team assignment as final fallback"""
+    desc_lower = description.lower()
+    
+    # Engineering keywords
+    if any(word in desc_lower for word in ['error', 'bug', 'crash', 'broken', 'fail', 'exception', 'timeout']):
+        return "Engineering"
+    
+    # Support keywords
+    if any(word in desc_lower for word in ['how to', 'training', 'help', 'tutorial', 'guide']):
+        return "Support"
+    
+    # Sales keywords
+    if any(word in desc_lower for word in ['price', 'quote', 'sales', 'cost', 'purchase']):
+        return "Sales"
+    
+    # Product keywords
+    if any(word in desc_lower for word in ['feature', 'request', 'enhance', 'improve', 'suggestion']):
+        return "Product"
+    
+    # Default
+    return "Triage"
 
 def analyze_team_batch(issues: list) -> Dict[str, str]:
     """

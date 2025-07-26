@@ -63,4 +63,24 @@ def force_full_refresh(background_tasks: BackgroundTasks):
 @router.get("/stats", summary="Get detailed cache statistics")
 def get_detailed_stats():
     """Get detailed cache statistics."""
-    return intelligent_cache.get_cache_stats()
+    cache_stats = intelligent_cache.get_cache_stats()
+    jira_status = intelligent_cache.get_jira_vectorization_status()
+    
+    return {
+        "cache": cache_stats,
+        "jira_vectorization": jira_status
+    }
+
+@router.post("/vectorize-jira", summary="Vectorize Jira tickets")
+def vectorize_jira_tickets(background_tasks: BackgroundTasks):
+    """Start Jira ticket vectorization in background."""
+    background_tasks.add_task(intelligent_cache.force_vectorize_jira)
+    return {
+        "message": "Jira vectorization started in background",
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    }
+
+@router.get("/jira-status", summary="Get Jira vectorization status")
+def get_jira_status():
+    """Get current Jira vectorization status."""
+    return intelligent_cache.get_jira_vectorization_status()

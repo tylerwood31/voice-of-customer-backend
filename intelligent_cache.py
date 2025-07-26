@@ -297,8 +297,11 @@ class IntelligentCache:
             # Store in database
             self.store_records_in_database(mapped_records, is_full_refresh)
             
-            # TODO: Analyze new records for team assignment
-            # This will be implemented in the next phase
+            # Analyze new records for team assignment
+            if is_full_refresh:
+                print("⚗️ Skipping team analysis for full refresh (too many records)")
+            else:
+                self._analyze_teams_for_new_records(mapped_records)
             
             print(f"✅ Cache update completed: {len(mapped_records)} records processed")
         else:
@@ -344,6 +347,70 @@ class IntelligentCache:
                 "is_sunday": self.should_do_full_refresh()
             }
             
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _analyze_teams_for_new_records(self, records: List[Dict[str, Any]]):
+        """Analyze team assignments for new records only"""
+        if not records:
+            return
+        
+        try:
+            from team_analyzer import analyze_team_assignment
+            
+            print(f"🤖 Analyzing team assignments for {len(records)} new records...")
+            
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            analyzed_count = 0
+            for record in records:
+                try:
+                    # Analyze team assignment
+                    team = analyze_team_assignment(
+                        issue_description=record.get("initial_description", ""),
+                        issue_type=record.get("type_of_issue", ""),
+                        status=record.get("status", ""),
+                        area_impacted=record.get("area_impacted", "")
+                    )
+                    
+                    # Update team assignment in database
+                    cursor.execute(
+                        "UPDATE feedback SET team_routed = ? WHERE id = ?",
+                        (team, record["id"])
+                    )
+                    
+                    analyzed_count += 1
+                    
+                    if analyzed_count % 5 == 0:
+                        print(f"📊 Analyzed {analyzed_count}/{len(records)} records")
+                
+                except Exception as e:
+                    print(f"⚠️ Team analysis failed for record {record.get('id')}: {e}")
+                    continue
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ Team analysis completed: {analyzed_count} records processed")
+            
+        except Exception as e:
+            print(f"❌ Team analysis batch failed: {e}")
+    
+    def force_vectorize_jira(self):
+        """Force vectorization of Jira tickets"""
+        try:
+            from semantic_analyzer import semantic_analyzer
+            return semantic_analyzer.vectorize_jira_tickets()
+        except Exception as e:
+            print(f"❌ Jira vectorization failed: {e}")
+            return False
+    
+    def get_jira_vectorization_status(self):
+        """Get Jira vectorization status"""
+        try:
+            from semantic_analyzer import semantic_analyzer
+            return semantic_analyzer.get_vectorization_status()
         except Exception as e:
             return {"error": str(e)}
 

@@ -16,56 +16,56 @@ from semantic_analyzer import semantic_analyzer
 
 
 def get_team_assignment(description: str, area_impacted: str, type_of_issue: str) -> str:
-    \"\"\"
+    """
     Assign team based on semantic analysis with area-based fallback.
-    \"\"\"
+    """
     try:
         # Create issue dictionary for semantic analyzer
         issue = {
-            \"id\": \"temp\",
-            \"description\": description or \"\",
-            \"area_impacted\": area_impacted or \"\",
-            \"type\": type_of_issue or \"\",
-            \"status\": \"New\"
+            "id": "temp",
+            "description": description or "",
+            "area_impacted": area_impacted or "",
+            "type": type_of_issue or "",
+            "status": "New"
         }
         
         # Use semantic analyzer to assign team
         team_assignments = semantic_analyzer.assign_teams_to_issues([issue])
-        assigned_team = team_assignments.get(\"temp\", \"Unassigned\")
+        assigned_team = team_assignments.get("temp", "Unassigned")
         
         # If semantic assignment failed or returned generic result, use area-based fallback
-        if assigned_team in [\"Triage\", \"Unassigned\"] and area_impacted:
+        if assigned_team in ["Triage", "Unassigned"] and area_impacted:
             area_lower = area_impacted.lower()
-            if \"salesforce\" in area_lower:
-                return \"Salesforce Team\"
-            elif \"billing\" in area_lower or \"payment\" in area_lower:
-                return \"Billing Team\"
-            elif \"underwriting\" in area_lower:
-                return \"Underwriting Team\"
-            elif \"claims\" in area_lower:
-                return \"Claims Team\"
-            elif \"portal\" in area_lower or \"dashboard\" in area_lower:
-                return \"Portal Team\"
+            if "salesforce" in area_lower:
+                return "Salesforce Team"
+            elif "billing" in area_lower or "payment" in area_lower:
+                return "Billing Team"
+            elif "underwriting" in area_lower:
+                return "Underwriting Team"
+            elif "claims" in area_lower:
+                return "Claims Team"
+            elif "portal" in area_lower or "dashboard" in area_lower:
+                return "Portal Team"
         
         return assigned_team
         
     except Exception as e:
-        print(f\"Team assignment error: {e}\")
+        print(f"Team assignment error: {e}")
         # Fallback to area-based assignment
         if area_impacted:
             area_lower = area_impacted.lower()
-            if \"salesforce\" in area_lower:
-                return \"Salesforce Team\"
-            elif \"billing\" in area_lower or \"payment\" in area_lower:
-                return \"Billing Team\"
-            elif \"underwriting\" in area_lower:
-                return \"Underwriting Team\"
-            elif \"claims\" in area_lower:
-                return \"Claims Team\"
-            elif \"portal\" in area_lower or \"dashboard\" in area_lower:
-                return \"Portal Team\"
+            if "salesforce" in area_lower:
+                return "Salesforce Team"
+            elif "billing" in area_lower or "payment" in area_lower:
+                return "Billing Team"
+            elif "underwriting" in area_lower:
+                return "Underwriting Team"
+            elif "claims" in area_lower:
+                return "Claims Team"
+            elif "portal" in area_lower or "dashboard" in area_lower:
+                return "Portal Team"
         
-        return \"Unassigned\"
+        return "Unassigned"
 
 def get_description(initial_description: str, notes: str) -> str:
     """

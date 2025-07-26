@@ -2,6 +2,7 @@
 Airtable API client for fetching records with proper pagination and filtering
 """
 import requests
+import time
 from typing import List, Dict, Any, Optional
 
 
@@ -55,10 +56,38 @@ def fetch_all_records(
         if offset:
             params["offset"] = offset
         
-        response = requests.get(url, headers=headers, params=params, timeout=30)
-        
-        if response.status_code != 200:
-            raise Exception(f"Airtable API error {response.status_code}: {response.text}")
+        # Retry logic with exponential backoff
+        for attempt in range(3):
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=30)
+                
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 429:  # Rate limit
+                    if attempt < 2:
+                        wait_time = 2 ** attempt
+                        print(f"⚠️ Rate limited, waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise Exception(f"Airtable rate limit exceeded after 3 attempts")
+                else:
+                    if attempt < 2:
+                        wait_time = 2 ** attempt
+                        print(f"⚠️ Airtable API error {response.status_code}, retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise Exception(f"Airtable API error {response.status_code}: {response.text}")
+                        
+            except requests.exceptions.RequestException as e:
+                if attempt < 2:
+                    wait_time = 2 ** attempt
+                    print(f"⚠️ Request failed: {e}, retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise Exception(f"Airtable request failed after 3 attempts: {e}")
         
         data = response.json()
         records = data.get("records", [])

@@ -25,30 +25,49 @@ async def startup_event():
         # Initialize cache system and load initial data
         try:
             print("🔄 Initializing cache system and checking data...")
-            from intelligent_cache import intelligent_cache
+            import intelligent_cache
+            
+            # Initialize the new schema
+            intelligent_cache.init_schema()
+            print("✅ Cache schema initialized")
             
             # Check if we have any feedback data, if not, do an initial load
-            stats = intelligent_cache.get_cache_stats()
-            if stats.get("total_records", 0) == 0:
+            status = intelligent_cache.get_status()
+            total_records = status.get("total_records", 0) if status else 0
+            
+            if total_records == 0:
                 print("📥 No feedback data found, performing initial Airtable sync...")
-                intelligent_cache.update_cache(force_full_refresh=True)
+                result = intelligent_cache.refresh_full()
+                print(f"✅ Full refresh completed: {result.get('total', 0)} records loaded")
             else:
-                print(f"✅ Found {stats.get('total_records', 0)} existing feedback records")
+                print(f"✅ Found {total_records} existing feedback records")
             
-            # Initialize Jira vectorization for team assignments
-            print("🤖 Checking Jira vectorization status...")
-            from semantic_analyzer import semantic_analyzer
-            vectorization_status = semantic_analyzer.get_vectorization_status()
-            print(f"📊 Jira tickets: {vectorization_status.get('vectorized_tickets', 0)}/{vectorization_status.get('total_tickets', 0)} vectorized")
+            # Initialize Jira vectorization for team assignments (optional)
+            try:
+                print("🤖 Checking Jira vectorization status...")
+                from semantic_analyzer import semantic_analyzer
+                vectorization_status = semantic_analyzer.get_vectorization_status()
+                print(f"📊 Jira tickets: {vectorization_status.get('vectorized_tickets', 0)}/{vectorization_status.get('total_tickets', 0)} vectorized")
+                
+                if vectorization_status.get('total_tickets', 0) == 0:
+                    print("⚠️ No Jira tickets found - team assignment will use fallback methods")
+                elif vectorization_status.get('vectorized_tickets', 0) == 0 and vectorization_status.get('openai_available', False):
+                    print("🔄 Starting Jira vectorization in background...")
+                    import threading
+                    vectorization_thread = threading.Thread(target=semantic_analyzer.vectorize_jira_tickets)
+                    vectorization_thread.daemon = True
+                    vectorization_thread.start()
+            except Exception as jira_error:
+                print(f"⚠️ Jira vectorization initialization failed (non-blocking): {jira_error}")
             
-            if vectorization_status.get('total_tickets', 0) == 0:
-                print("⚠️ No Jira tickets found - team assignment will use fallback methods")
-            elif vectorization_status.get('vectorized_tickets', 0) == 0 and vectorization_status.get('openai_available', False):
-                print("🔄 Starting Jira vectorization in background...")
-                import threading
-                vectorization_thread = threading.Thread(target=semantic_analyzer.vectorize_jira_tickets)
-                vectorization_thread.daemon = True
-                vectorization_thread.start()
+            # Start the cache scheduler
+            try:
+                print("⏰ Starting cache scheduler...")
+                from cache_scheduler import cache_scheduler
+                cache_scheduler.start()
+                print("✅ Cache scheduler started successfully")
+            except Exception as scheduler_error:
+                print(f"⚠️ Cache scheduler initialization failed (non-blocking): {scheduler_error}")
             
         except Exception as cache_error:
             print(f"⚠️ Cache/data initialization warning (non-blocking): {cache_error}")

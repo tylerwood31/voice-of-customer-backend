@@ -19,22 +19,31 @@ def get_cache_status():
     # Get cache status from new cache system
     cache_status = intelligent_cache.get_status()
     
+    # Get scheduler status
+    try:
+        from cache_scheduler import cache_scheduler
+        scheduler_status = cache_scheduler.get_status()
+    except Exception as e:
+        scheduler_status = {"error": f"Scheduler not available: {e}"}
+    
     return {
         "current_time": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
         "current_weekday": current_weekday,
-        "cache_type": "new_architecture",
+        "cache_type": "new_architecture_with_scheduling",
         "cache_status": cache_status,
+        "scheduler_status": scheduler_status,
         "schedule": {
             "strategy": {
-                "full_refresh": "Load all 2025 records from Airtable",
-                "incremental": "Load records modified since last update",
+                "full_refresh": "Sundays at 11:59 PM EST - Load all 2025 records from Airtable",
+                "incremental": "Hourly 9 AM - 6 PM EST Mon-Fri - Load records modified since last update",
                 "storage": "JSON fields in SQLite with WAL mode"
             }
         },
         "actions": {
             "force_incremental": "/api/cache/update-incremental",
             "force_full_refresh": "/api/cache/update-full",
-            "get_status": "/api/cache/"
+            "get_status": "/api/cache/",
+            "scheduler_status": "/api/cache/scheduler-status"
         }
     }
 
@@ -139,6 +148,18 @@ def force_full_refresh_sync():
         return {
             "error": f"Cache refresh failed: {str(e)}",
             "traceback": traceback.format_exc(),
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        }
+
+@router.get("/scheduler-status", summary="Get cache scheduler status")
+def get_scheduler_status():
+    """Get detailed scheduler status and scheduling information."""
+    try:
+        from cache_scheduler import cache_scheduler
+        return cache_scheduler.get_status()
+    except Exception as e:
+        return {
+            "error": f"Scheduler not available: {str(e)}",
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         }
 

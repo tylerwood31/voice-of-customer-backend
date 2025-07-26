@@ -154,11 +154,22 @@ class DatabaseManager:
                 conn.close()
                 return True
             
-            # Load from CSV
-            csv_path = os.path.join(os.path.dirname(__file__), "data", "jira_tickets.csv")
+            # Load from CSV - try multiple possible paths
+            possible_paths = [
+                os.path.join(os.path.dirname(__file__), "data", "jira_tickets.csv"),
+                os.path.join(os.getcwd(), "data", "jira_tickets.csv"),
+                "data/jira_tickets.csv",
+                "./data/jira_tickets.csv"
+            ]
             
-            if not os.path.exists(csv_path):
-                print(f"⚠️ Jira CSV not found at {csv_path}")
+            csv_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    csv_path = path
+                    break
+            
+            if not csv_path:
+                print(f"⚠️ Jira CSV not found in any of these locations: {possible_paths}")
                 conn.close()
                 return False
             

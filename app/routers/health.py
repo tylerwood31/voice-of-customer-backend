@@ -179,3 +179,34 @@ def quick_health():
         return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+@router.get("/team-assignment", summary="Team assignment system status")
+def check_team_assignment_health():
+    """Check the health of the team assignment system."""
+    try:
+        from semantic_analyzer import semantic_analyzer
+        from team_analyzer import analyze_team_assignment
+        
+        # Get vectorization status
+        vectorization_status = semantic_analyzer.get_vectorization_status()
+        
+        # Test team assignment
+        test_result = analyze_team_assignment(
+            "Test issue with login error", 
+            "Bug", 
+            "New", 
+            "Authentication"
+        )
+        
+        return {
+            "status": "healthy" if vectorization_status.get("ready_for_semantic_search", False) else "warning",
+            "vectorization_status": vectorization_status,
+            "test_assignment": test_result,
+            "openai_available": OPENAI_API_KEY is not None
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }

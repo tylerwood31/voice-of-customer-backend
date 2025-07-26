@@ -22,13 +22,36 @@ async def startup_event():
         else:
             print("⚠️ Database initialization had issues but API will continue")
         
-        # Initialize cache system (will be non-blocking)
+        # Initialize cache system and load initial data
         try:
-            print("🔄 Initializing cache system...")
-            # This will be replaced with intelligent cache system
-            pass
+            print("🔄 Initializing cache system and checking data...")
+            from intelligent_cache import intelligent_cache
+            
+            # Check if we have any feedback data, if not, do an initial load
+            stats = intelligent_cache.get_cache_stats()
+            if stats.get("total_records", 0) == 0:
+                print("📥 No feedback data found, performing initial Airtable sync...")
+                intelligent_cache.update_cache(force_full_refresh=True)
+            else:
+                print(f"✅ Found {stats.get('total_records', 0)} existing feedback records")
+            
+            # Initialize Jira vectorization for team assignments
+            print("🤖 Checking Jira vectorization status...")
+            from semantic_analyzer import semantic_analyzer
+            vectorization_status = semantic_analyzer.get_vectorization_status()
+            print(f"📊 Jira tickets: {vectorization_status.get('vectorized_tickets', 0)}/{vectorization_status.get('total_tickets', 0)} vectorized")
+            
+            if vectorization_status.get('total_tickets', 0) == 0:
+                print("⚠️ No Jira tickets found - team assignment will use fallback methods")
+            elif vectorization_status.get('vectorized_tickets', 0) == 0 and vectorization_status.get('openai_available', False):
+                print("🔄 Starting Jira vectorization in background...")
+                import threading
+                vectorization_thread = threading.Thread(target=semantic_analyzer.vectorize_jira_tickets)
+                vectorization_thread.daemon = True
+                vectorization_thread.start()
+            
         except Exception as cache_error:
-            print(f"⚠️ Cache initialization warning (non-blocking): {cache_error}")
+            print(f"⚠️ Cache/data initialization warning (non-blocking): {cache_error}")
         
         print("🎉 Voice of Customer API startup completed")
         
@@ -82,6 +105,8 @@ app.add_middleware(
         "http://127.0.0.1:3001", 
         "http://localhost:3002", 
         "http://127.0.0.1:3002",
+        "https://voice-of-customer.netlify.app",
+        "https://*.voice-of-customer.netlify.app",
         "https://cw-voc-v1.netlify.app",
         "https://*.cw-voc-v1.netlify.app"
     ],

@@ -37,14 +37,15 @@ def get_feedback(
 ):
     """
     Get feedback records from local database cache (fast).
-    Optionally triggers background cache update if needed.
+    Only triggers cache update on Sundays to maintain fast page loads.
     """
     
-    # Check if we should update cache in background
+    # Only check for cache updates on Sundays to avoid performance issues
+    # This ensures fast page loads throughout the week
     if intelligent_cache.should_check_for_updates():
         background_tasks.add_task(intelligent_cache.update_cache)
     
-    # Get data from local database (always fast)
+    # Always serve from local database (fast, no external API calls)
     filters = {}
     if team:
         filters["team"] = team

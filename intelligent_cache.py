@@ -25,9 +25,9 @@ class IntelligentCache:
         return now.weekday() == 6  # Sunday = 6
     
     def should_check_for_updates(self) -> bool:
-        """Check if it's time to look for new records"""
-        now = time.time()
-        return (now - self.last_update_check) > self.update_frequency
+        """Check if it's time to look for new records - only on Sundays for production performance"""
+        # Only check for updates on Sundays to avoid performance issues
+        return self.should_do_full_refresh()
     
     def get_last_update_timestamp(self) -> str:
         """Get the timestamp of the last update"""

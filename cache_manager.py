@@ -11,7 +11,7 @@ import requests
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from config import AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
-from team_analyzer import analyze_team_batch
+# from team_analyzer import analyze_team_batch  # Temporarily disabled for reliable deployment
 
 class AirtableCache:
     def __init__(self, cache_duration_minutes=10):

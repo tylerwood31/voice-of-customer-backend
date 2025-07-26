@@ -69,9 +69,13 @@ def get_customer_pulse():
         # Add to all feedback
         all_feedback.append(feedback_item)
             
-        # Track high priority items (priority 0-1 are highest)
-        if priority and int(priority) <= 1:
-            recent_high_priority.append(feedback_item)
+        # Track high priority items (check for "High" or numeric priority)
+        try:
+            if priority and (priority.lower() == "high" or (priority.isdigit() and int(priority) <= 1)):
+                recent_high_priority.append(feedback_item)
+        except:
+            # If priority conversion fails, skip high priority check
+            pass
     
     # Sort high priority by date (most recent first)
     recent_high_priority.sort(key=lambda x: x["created"] or "", reverse=True)
@@ -85,7 +89,16 @@ def get_customer_pulse():
     
     # Calculate summary stats
     total_feedback = len(records)
-    high_priority_count = len([r for r in records if r[2] and int(r[2]) <= 1])
+    # Count high priority items (text or numeric)
+    high_priority_count = 0
+    for r in records:
+        priority = r[2]
+        try:
+            if priority and (priority.lower() == "high" or (priority.isdigit() and int(priority) <= 1)):
+                high_priority_count += 1
+        except:
+            pass
+    
     assigned_count = len([r for r in records if r[5] and r[5] != "Unassigned"])
     
     return {

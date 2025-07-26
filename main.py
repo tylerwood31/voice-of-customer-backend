@@ -6,13 +6,24 @@ import os
 app = FastAPI(title="Voice of Customer API")
 
 # Initialize database on startup
-@app.on_event("startup")
+@app.on_event("startup") 
 async def startup_event():
     try:
         from create_empty_db import create_empty_database
         create_empty_database()
+        print("✅ Database initialized successfully")
     except Exception as e:
-        print(f"Warning: Could not initialize database: {e}")
+        print(f"❌ Warning: Could not initialize database: {e}")
+        # Create a minimal fallback
+        try:
+            import sqlite3
+            from config import DB_PATH
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute("CREATE TABLE IF NOT EXISTS feedback (id TEXT, initial_description TEXT, notes TEXT, priority TEXT, team_routed TEXT, environment TEXT, area_impacted TEXT, created TEXT)")
+            conn.close()
+            print("✅ Created minimal database schema")
+        except Exception as e2:
+            print(f"❌ Failed to create minimal schema: {e2}")
 
 # Add CORS middleware
 app.add_middleware(

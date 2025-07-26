@@ -128,19 +128,8 @@ def get_feedback(
             cursor.execute(query, params)
             rows = cursor.fetchall()
             
-            # Get team assignments for all records in batch (with size limit)
-            try:
-                if len(rows) > 1000:
-                    # For large datasets, skip team assignment to avoid timeout
-                    # Team assignment will fall back to area-based logic per record
-                    team_assignments = {}
-                    print(f"⚠️ Skipping batch team assignment for {len(rows)} records (too large)")
-                else:
-                    records_data = [(row[0], json.loads(row[1])) for row in rows]
-                    team_assignments = get_team_assignments_batch(records_data)
-            except Exception as e:
-                print(f"⚠️ Batch team assignment failed: {e}")
-                team_assignments = {}
+            # Skip batch team assignment for now to avoid timeout - use fallback logic per record
+            team_assignments = {}
             
             # Convert to our response format
             results = []

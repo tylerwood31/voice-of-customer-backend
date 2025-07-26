@@ -1,8 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports
+import os
 
 app = FastAPI(title="Voice of Customer API")
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    try:
+        from create_empty_db import create_empty_database
+        create_empty_database()
+    except Exception as e:
+        print(f"Warning: Could not initialize database: {e}")
 
 # Add CORS middleware
 app.add_middleware(

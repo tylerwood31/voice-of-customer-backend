@@ -34,26 +34,30 @@ def get_description(initial_description: str, notes: str) -> str:
 
 @router.get("/", summary="Get feedback with optional filters")
 def get_feedback(team: str = None, priority: str = None, environment: str = None):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
 
-    query = "SELECT id, initial_description, notes, priority, team_routed, environment, area_impacted, created FROM feedback"
-    filters = []
-    params = []
+        query = "SELECT id, initial_description, notes, priority, team_routed, environment, area_impacted, created FROM feedback"
+        filters = []
+        params = []
 
-    if team:
-        filters.append("team_routed = ?")
-        params.append(team)
-    if priority:
-        filters.append("priority = ?")
-        params.append(priority)
+        if team:
+            filters.append("team_routed = ?")
+            params.append(team)
+        if priority:
+            filters.append("priority = ?")
+            params.append(priority)
 
-    if filters:
-        query += " WHERE " + " AND ".join(filters)
+        if filters:
+            query += " WHERE " + " AND ".join(filters)
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+    except Exception as e:
+        # Return empty list if database doesn't exist or other error
+        return []
 
     results = []
     for r in rows:

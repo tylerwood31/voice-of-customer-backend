@@ -26,3 +26,6 @@ coverage.xml
 .DS_Store
 server.log
 response_times_cache.logvoice_of_customer.db
+
+# Local Netlify folder
+.netlify

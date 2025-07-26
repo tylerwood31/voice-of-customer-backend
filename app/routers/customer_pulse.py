@@ -4,23 +4,30 @@ from collections import Counter
 from datetime import datetime
 
 router = APIRouter()
-DB_PATH = "/Users/tylerwood/voice_of_customer/voice_of_customer.db"
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+from config import DB_PATH
 
 @router.get("/", summary="Get customer pulse analytics")
 def get_customer_pulse():
     """Get aggregated analytics on customer feedback patterns."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Fetch all feedback records with relevant fields
-    cursor.execute("""
-        SELECT id, initial_description, priority, environment, 
-               area_impacted, team_routed, created 
-        FROM feedback
-    """)
-    
-    records = cursor.fetchall()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Fetch all feedback records with relevant fields
+        cursor.execute("""
+            SELECT id, initial_description, priority, environment, 
+                   area_impacted, team_routed, created 
+            FROM feedback
+        """)
+        
+        records = cursor.fetchall()
+        conn.close()
+    except Exception as e:
+        # Return empty data structure if database doesn't exist
+        records = []
     
     # Initialize counters
     environments = Counter()

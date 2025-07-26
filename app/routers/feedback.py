@@ -13,77 +13,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 import intelligent_cache
 from db_connection import db_conn
 
-# Cache for team assignments to avoid repeated semantic analysis
-_team_assignment_cache = {}
-_cache_timestamp = None
-
-def get_team_assignments_batch(records_data):
-    """Get team assignments for a batch of records, using caching."""
-    global _team_assignment_cache, _cache_timestamp
-    
-    # Check if cache is still valid (refresh every hour)
-    now = datetime.now()
-    if _cache_timestamp and (now - _cache_timestamp).total_seconds() < 3600:
-        # Use cached assignments
-        return _team_assignment_cache
-    
-    # Rebuild cache with batch assignment
-    try:
-        from semantic_analyzer import semantic_analyzer
-        
-        # Prepare all issues for batch processing
-        issues_data = []
-        for record_id, fields in records_data:
-            area_impacted_raw = fields.get("Area Impacted")
-            if isinstance(area_impacted_raw, list) and area_impacted_raw:
-                area_impacted = area_impacted_raw[0]
-            elif isinstance(area_impacted_raw, str):
-                area_impacted = area_impacted_raw
-            else:
-                area_impacted = "Unknown"
-                
-            issues_data.append({
-                "id": record_id,
-                "description": fields.get("Notes", ""),
-                "type": fields.get("Type of Issue", ""),
-                "status": fields.get("Status", "New"),
-                "area_impacted": area_impacted
-            })
-        
-        # Get batch team assignments
-        _team_assignment_cache = semantic_analyzer.assign_teams_to_issues(issues_data)
-        _cache_timestamp = now
-        
-    except Exception as e:
-        print(f"Semantic analyzer batch assignment failed: {e}")
-        # Fallback to area-based assignment
-        _team_assignment_cache = {}
-        for record_id, fields in records_data:
-            area_impacted_raw = fields.get("Area Impacted")
-            if isinstance(area_impacted_raw, list) and area_impacted_raw:
-                area_impacted = area_impacted_raw[0]
-            elif isinstance(area_impacted_raw, str):
-                area_impacted = area_impacted_raw
-            else:
-                area_impacted = "Unknown"
-            
-            assigned_team = "Triage"  # Default
-            if area_impacted:
-                if "salesforce" in area_impacted.lower():
-                    assigned_team = "Salesforce Team"
-                elif "billing" in area_impacted.lower() or "payment" in area_impacted.lower():
-                    assigned_team = "Billing Team"
-                elif "underwriting" in area_impacted.lower():
-                    assigned_team = "Underwriting Team"
-                elif "claims" in area_impacted.lower():
-                    assigned_team = "Claims Team"
-                elif "portal" in area_impacted.lower() or "dashboard" in area_impacted.lower():
-                    assigned_team = "Portal Team"
-            
-            _team_assignment_cache[record_id] = assigned_team
-        _cache_timestamp = now
-    
-    return _team_assignment_cache
 
 def get_description(initial_description: str, notes: str) -> str:
     """
@@ -128,8 +57,6 @@ def get_feedback(
             cursor.execute(query, params)
             rows = cursor.fetchall()
             
-            # Skip batch team assignment for now to avoid timeout - use fallback logic per record
-            team_assignments = {}
             
             # Convert to our response format
             results = []
@@ -158,25 +85,19 @@ def get_feedback(
                     else:
                         area_impacted = "Unknown"
                     
-                    # Get team assignment from cached batch results or fallback
-                    assigned_team = team_assignments.get(row[0])
-                    if not assigned_team:
-                        # Fallback to area-based assignment
-                        if area_impacted:
-                            if "salesforce" in area_impacted.lower():
-                                assigned_team = "Salesforce Team"
-                            elif "billing" in area_impacted.lower() or "payment" in area_impacted.lower():
-                                assigned_team = "Billing Team"
-                            elif "underwriting" in area_impacted.lower():
-                                assigned_team = "Underwriting Team"
-                            elif "claims" in area_impacted.lower():
-                                assigned_team = "Claims Team"
-                            elif "portal" in area_impacted.lower() or "dashboard" in area_impacted.lower():
-                                assigned_team = "Portal Team"
-                            else:
-                                assigned_team = "Triage"
-                        else:
-                            assigned_team = "Triage"
+                    # Simple area-based team assignment
+                    if area_impacted and "salesforce" in area_impacted.lower():
+                        assigned_team = "Salesforce Team"
+                    elif area_impacted and ("billing" in area_impacted.lower() or "payment" in area_impacted.lower()):
+                        assigned_team = "Billing Team"
+                    elif area_impacted and "underwriting" in area_impacted.lower():
+                        assigned_team = "Underwriting Team"
+                    elif area_impacted and "claims" in area_impacted.lower():
+                        assigned_team = "Claims Team"
+                    elif area_impacted and ("portal" in area_impacted.lower() or "dashboard" in area_impacted.lower()):
+                        assigned_team = "Portal Team"
+                    else:
+                        assigned_team = "Triage"
                     
                     record = {
                         "id": row[0],
@@ -256,15 +177,19 @@ def get_feedback_by_id(feedback_id: str):
             else:
                 area_impacted = "Unknown"
             
-            # Get team assignment (use cache or compute for single record)
-            global _team_assignment_cache
-            if row[0] in _team_assignment_cache:
-                assigned_team = _team_assignment_cache[row[0]]
+            # Simple area-based team assignment
+            if area_impacted and "salesforce" in area_impacted.lower():
+                assigned_team = "Salesforce Team"
+            elif area_impacted and ("billing" in area_impacted.lower() or "payment" in area_impacted.lower()):
+                assigned_team = "Billing Team"
+            elif area_impacted and "underwriting" in area_impacted.lower():
+                assigned_team = "Underwriting Team"
+            elif area_impacted and "claims" in area_impacted.lower():
+                assigned_team = "Claims Team"
+            elif area_impacted and ("portal" in area_impacted.lower() or "dashboard" in area_impacted.lower()):
+                assigned_team = "Portal Team"
             else:
-                # Compute team assignment for this single record
-                records_data = [(row[0], fields)]
-                team_assignments = get_team_assignments_batch(records_data)
-                assigned_team = team_assignments.get(row[0], "Triage")
+                assigned_team = "Triage"
             
             return {
                 "id": row[0],

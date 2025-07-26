@@ -1,6 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 import sqlite3
-import requests
 from collections import Counter
 from datetime import datetime
 
@@ -8,53 +7,32 @@ router = APIRouter()
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from config import DB_PATH, AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME
-
-# Import cache manager
-sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from cache_manager import airtable_cache
-
-def fetch_airtable_data():
-    """Fetch data from Airtable using cache for better performance."""
-    return airtable_cache.get_data()
+from config import DB_PATH
+from intelligent_cache import intelligent_cache
 
 @router.get("/", summary="Get customer pulse analytics")
-def get_customer_pulse():
+def get_customer_pulse(background_tasks: BackgroundTasks):
     """Get aggregated analytics on customer feedback patterns."""
-    # Try to get data from Airtable first
-    airtable_data = fetch_airtable_data()
     
-    if airtable_data:
-        # Convert Airtable data to the format expected by the rest of the function
-        records = []
-        for record in airtable_data:
-            records.append((
-                record.get("id", ""),
-                record.get("initial_description", ""),
-                record.get("priority", "Medium"),
-                record.get("environment", "Unknown"),
-                record.get("area_impacted", "Bug"),
-                record.get("team_routed", "Triage"),
-                record.get("created", "")
-            ))
-    else:
-        # Fallback to SQLite
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            # Fetch all feedback records with relevant fields
-            cursor.execute("""
-                SELECT id, initial_description, priority, environment, 
-                       area_impacted, team_routed, created 
-                FROM feedback
-            """)
-            
-            records = cursor.fetchall()
-            conn.close()
-        except Exception as e:
-            # Return empty data structure if database doesn't exist
-            records = []
+    # Check if we should update cache in background
+    if intelligent_cache.should_check_for_updates():
+        background_tasks.add_task(intelligent_cache.update_cache)
+    
+    # Get data from local database (fast)
+    feedback_data = intelligent_cache.get_feedback_from_database()
+    
+    # Convert to tuple format for existing analytics logic
+    records = []
+    for record in feedback_data:
+        records.append((
+            record.get("id", ""),
+            record.get("description", ""),
+            record.get("priority", "Medium"),
+            record.get("environment", "Unknown"),
+            record.get("area_impacted", "Unknown"),
+            record.get("team", "Triage"),
+            record.get("created", "")
+        ))
     
     # Initialize counters
     environments = Counter()

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports, users, airtable_test, cache_status
+from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports, users, airtable_test, cache_status, health
 import os
 
 app = FastAPI(title="Voice of Customer API")
@@ -8,34 +8,44 @@ app = FastAPI(title="Voice of Customer API")
 # Initialize database on startup
 @app.on_event("startup") 
 async def startup_event():
+    print("🚀 Starting Voice of Customer API...")
+    
     try:
-        from create_empty_db import create_empty_database
-        create_empty_database()
-        print("✅ Database initialized successfully")
+        # Use robust database manager
+        from database_manager import initialize_database
         
-        # Also initialize users table
-        from app.routers.users import init_users_table
-        init_users_table()
-        print("✅ Users table initialized successfully")
+        # Initialize database system with full error handling
+        success = initialize_database()
         
-        # Load Jira data if missing (prevents data loss on deployment)
+        if success:
+            print("✅ Database system initialized successfully")
+        else:
+            print("⚠️ Database initialization had issues but API will continue")
+        
+        # Initialize cache system (will be non-blocking)
         try:
-            from startup_data_loader import ensure_jira_data_loaded
-            ensure_jira_data_loaded()
-            print("✅ Jira data check completed")
-        except Exception as jira_error:
-            print(f"⚠️ Jira data loading failed (non-blocking): {jira_error}")
+            print("🔄 Initializing cache system...")
+            # This will be replaced with intelligent cache system
+            pass
+        except Exception as cache_error:
+            print(f"⚠️ Cache initialization warning (non-blocking): {cache_error}")
+        
+        print("🎉 Voice of Customer API startup completed")
         
     except Exception as e:
-        print(f"❌ Warning: Could not initialize database: {e}")
-        # Create a minimal fallback
+        print(f"❌ Startup error: {e}")
+        print("🔄 Attempting minimal fallback initialization...")
+        
+        # Minimal fallback
         try:
             import sqlite3
             from config import DB_PATH
-            conn = sqlite3.connect(DB_PATH)
             
-            # Create feedback table
-            conn.execute("""CREATE TABLE IF NOT EXISTS feedback (
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Create essential tables
+            cursor.execute("""CREATE TABLE IF NOT EXISTS feedback (
                 id TEXT PRIMARY KEY, 
                 initial_description TEXT, 
                 notes TEXT, 
@@ -46,8 +56,7 @@ async def startup_event():
                 created TEXT
             )""")
             
-            # Create users table
-            conn.execute("""CREATE TABLE IF NOT EXISTS users (
+            cursor.execute("""CREATE TABLE IF NOT EXISTS users (
                 email TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 role TEXT NOT NULL,
@@ -55,10 +64,13 @@ async def startup_event():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )""")
             
+            conn.commit()
             conn.close()
-            print("✅ Created minimal database schema")
-        except Exception as e2:
-            print(f"❌ Failed to create minimal schema: {e2}")
+            print("✅ Minimal fallback database created")
+            
+        except Exception as fallback_error:
+            print(f"❌ Fallback failed: {fallback_error}")
+            print("⚠️ API starting with potential database issues")
 
 # Add CORS middleware
 app.add_middleware(
@@ -88,6 +100,7 @@ app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(airtable_test.router, prefix="/test-airtable", tags=["Testing"])
 app.include_router(cache_status.router, prefix="/cache", tags=["Cache"])
+app.include_router(health.router, prefix="/health", tags=["Health"])
 
 @app.get("/")
 def root():

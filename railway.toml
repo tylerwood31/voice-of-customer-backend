@@ -1,0 +1,9 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python start.py"
+healthcheckPath = "/"
+
+[[services]]
+name = "voice-of-customer-api"

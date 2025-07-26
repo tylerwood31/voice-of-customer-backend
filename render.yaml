@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: voice-of-customer-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_PATH
+        value: ./voice_of_customer.db
+      - key: OPENAI_API_KEY
+        sync: false  # Set manually in Render dashboard

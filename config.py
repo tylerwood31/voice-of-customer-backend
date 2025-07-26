@@ -20,4 +20,4 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Airtable configuration
 AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID") 
-AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Imported table")
+AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Lead Bugs")

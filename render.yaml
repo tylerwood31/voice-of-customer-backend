@@ -18,4 +18,4 @@ services:
       - key: AIRTABLE_BASE_ID
         sync: false  # Set manually in Render dashboard
       - key: AIRTABLE_TABLE_NAME
-        value: "Imported table"
+        value: "Lead Bugs"

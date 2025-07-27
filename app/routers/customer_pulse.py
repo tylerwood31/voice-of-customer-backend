@@ -8,54 +8,54 @@ router = APIRouter()
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-from db_connection import db_conn
+from config import DB_PATH
 
 @router.get("/", summary="Get customer pulse analytics")
 def get_customer_pulse(background_tasks: BackgroundTasks):
     """Get aggregated analytics on customer feedback patterns."""
     
-    # Get data from new cache system
+    # Get data from original database
     feedback_data = []
     try:
-        with db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, fields_json FROM feedback_cache")
-            rows = cursor.fetchall()
-            
-            for row in rows:
-                try:
-                    fields = json.loads(row[1])
-                    # Map fields to expected format
-                    priority_map = {1: "High", 2: "Medium", 3: "Low"}
-                    priority_num = fields.get("Priority", 3)
-                    priority = priority_map.get(priority_num, "Medium")
-                    
-                    environment = fields.get("Environment", "")
-                    if not environment:
-                        is_cw2 = fields.get("CW 2.0 Bug", False)
-                        environment = "CW 2.0" if is_cw2 else "CW 1.0"
-                    
-                    area_impacted_raw = fields.get("Area Impacted")
-                    if isinstance(area_impacted_raw, list) and area_impacted_raw:
-                        area_impacted = area_impacted_raw[0]
-                    elif isinstance(area_impacted_raw, str):
-                        area_impacted = area_impacted_raw
-                    else:
-                        area_impacted = "Unknown"
-                    
-                    feedback_data.append({
-                        "id": row[0],
-                        "description": fields.get("Notes", ""),
-                        "priority": priority,
-                        "team": "Triage",
-                        "environment": environment,
-                        "area_impacted": area_impacted,
-                        "created": fields.get("Created", fields.get("Reported On", "")),
-                        "status": fields.get("Status", "New")
-                    })
-                except Exception as e:
-                    print(f"Error parsing record {row[0]}: {e}")
-                    continue
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, created, priority, environment, area_impacted, 
+                   status, notes, team_routed
+            FROM feedback
+        """)
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            try:
+                # Map priority
+                priority_value = row['priority']
+                if str(priority_value) == '1':
+                    priority = 'High'
+                elif str(priority_value) == '2':
+                    priority = 'Medium'
+                elif str(priority_value) == '3':
+                    priority = 'Low'
+                else:
+                    priority = priority_value or 'Medium'
+                
+                feedback_data.append({
+                    "id": row['id'],
+                    "description": row['notes'] or "",
+                    "priority": priority,
+                    "team": row['team_routed'] or "Unassigned",
+                    "environment": row['environment'] or "Unknown",
+                    "area_impacted": row['area_impacted'] or "Unknown",
+                    "created": row['created'] or "",
+                    "status": row['status'] or "New"
+                })
+            except Exception as e:
+                print(f"Error parsing record: {e}")
+                continue
+        
+        conn.close()
     except Exception as e:
         print(f"Error fetching feedback data: {e}")
     

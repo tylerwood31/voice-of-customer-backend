@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports, users, airtable_test, cache_status, health
+from app.routers import feedback, teams, components, chat, customer_pulse, ai_summary, reports, users, health
 import os
 
 app = FastAPI(title="Voice of Customer API")
@@ -11,108 +11,56 @@ async def startup_event():
     print("🚀 Starting Voice of Customer API...")
     
     try:
-        # Use robust database manager
-        from database_manager import initialize_database
+        # Verify database exists and is accessible
+        import sqlite3
+        from config import DB_PATH
         
-        # Initialize database system with full error handling
-        success = initialize_database()
+        print(f"📁 Using database at: {DB_PATH}")
         
-        if success:
-            print("✅ Database system initialized successfully")
+        # Test database connection
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check if feedback table exists and has data
+        cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='feedback'")
+        table_exists = cursor.fetchone()[0] > 0
+        
+        if table_exists:
+            cursor.execute("SELECT COUNT(*) FROM feedback")
+            record_count = cursor.fetchone()[0]
+            print(f"✅ Database connected successfully: {record_count} feedback records found")
         else:
-            print("⚠️ Database initialization had issues but API will continue")
+            print("⚠️ Feedback table not found in database")
         
-        # Initialize cache system and load initial data
+        # Ensure users table exists for authentication
+        cursor.execute("""CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        
+        conn.commit()
+        conn.close()
+        
+        # Initialize Jira vectorization for team assignments (optional)
         try:
-            print("🔄 Initializing cache system and checking data...")
-            import intelligent_cache
+            print("🤖 Checking Jira vectorization status...")
+            from semantic_analyzer import semantic_analyzer
+            vectorization_status = semantic_analyzer.get_vectorization_status()
+            print(f"📊 Jira tickets: {vectorization_status.get('vectorized_tickets', 0)}/{vectorization_status.get('total_tickets', 0)} vectorized")
             
-            # Initialize the new schema
-            intelligent_cache.init_schema()
-            print("✅ Cache schema initialized")
-            
-            # Check if we have any feedback data, if not, do an initial load
-            status = intelligent_cache.get_status()
-            total_records = status.get("total_records", 0) if status else 0
-            
-            if total_records == 0:
-                print("📥 No feedback data found, performing initial Airtable sync...")
-                result = intelligent_cache.refresh_full()
-                print(f"✅ Full refresh completed: {result.get('total', 0)} records loaded")
-            else:
-                print(f"✅ Found {total_records} existing feedback records")
-            
-            # Initialize Jira vectorization for team assignments (optional)
-            try:
-                print("🤖 Checking Jira vectorization status...")
-                from semantic_analyzer import semantic_analyzer
-                vectorization_status = semantic_analyzer.get_vectorization_status()
-                print(f"📊 Jira tickets: {vectorization_status.get('vectorized_tickets', 0)}/{vectorization_status.get('total_tickets', 0)} vectorized")
-                
-                if vectorization_status.get('total_tickets', 0) == 0:
-                    print("⚠️ No Jira tickets found - team assignment will use fallback methods")
-                elif vectorization_status.get('vectorized_tickets', 0) == 0 and vectorization_status.get('openai_available', False):
-                    print("🔄 Starting Jira vectorization in background...")
-                    import threading
-                    vectorization_thread = threading.Thread(target=semantic_analyzer.vectorize_jira_tickets)
-                    vectorization_thread.daemon = True
-                    vectorization_thread.start()
-            except Exception as jira_error:
-                print(f"⚠️ Jira vectorization initialization failed (non-blocking): {jira_error}")
-            
-            # Start the cache scheduler
-            try:
-                print("⏰ Starting cache scheduler...")
-                from cache_scheduler import cache_scheduler
-                cache_scheduler.start()
-                print("✅ Cache scheduler started successfully")
-            except Exception as scheduler_error:
-                print(f"⚠️ Cache scheduler initialization failed (non-blocking): {scheduler_error}")
-            
-        except Exception as cache_error:
-            print(f"⚠️ Cache/data initialization warning (non-blocking): {cache_error}")
+            if vectorization_status.get('total_tickets', 0) == 0:
+                print("⚠️ No Jira tickets found - team assignment will use fallback methods")
+        except Exception as jira_error:
+            print(f"⚠️ Jira vectorization check failed (non-blocking): {jira_error}")
         
         print("🎉 Voice of Customer API startup completed")
         
     except Exception as e:
         print(f"❌ Startup error: {e}")
-        print("🔄 Attempting minimal fallback initialization...")
-        
-        # Minimal fallback
-        try:
-            import sqlite3
-            from config import DB_PATH
-            
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            # Create essential tables
-            cursor.execute("""CREATE TABLE IF NOT EXISTS feedback (
-                id TEXT PRIMARY KEY, 
-                initial_description TEXT, 
-                notes TEXT, 
-                priority TEXT, 
-                team_routed TEXT, 
-                environment TEXT, 
-                area_impacted TEXT, 
-                created TEXT
-            )""")
-            
-            cursor.execute("""CREATE TABLE IF NOT EXISTS users (
-                email TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                role TEXT NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )""")
-            
-            conn.commit()
-            conn.close()
-            print("✅ Minimal fallback database created")
-            
-        except Exception as fallback_error:
-            print(f"❌ Fallback failed: {fallback_error}")
-            print("⚠️ API starting with potential database issues")
+        print("⚠️ API starting with potential database issues")
 
 # Add CORS middleware
 app.add_middleware(
@@ -142,8 +90,6 @@ app.include_router(customer_pulse.router, prefix="/customer-pulse", tags=["Analy
 app.include_router(ai_summary.router, prefix="/ai-summary", tags=["AI"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
-app.include_router(airtable_test.router, prefix="/test-airtable", tags=["Testing"])
-app.include_router(cache_status.router, prefix="/cache", tags=["Cache"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
 
 @app.get("/")
